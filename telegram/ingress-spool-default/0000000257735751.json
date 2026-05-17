@@ -1,0 +1,1 @@
+{"version":1,"updateId":257735751,"receivedAt":1779045434926,"update":{"update_id":257735751,"message":{"message_id":419,"from":{"id":7389257495,"is_bot":false,"first_name":"Kush","language_code":"en"},"chat":{"id":7389257495,"first_name":"Kush","type":"private"},"date":1779045435,"text":"/start","entities":[{"offset":0,"length":6,"type":"bot_command"}]}}}
