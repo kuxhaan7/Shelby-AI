@@ -1,3 +1,4 @@
+
 # Shelby-AI
 
 An autonomous agent built on the Claude API with persistent memory, recurring heartbeats, and conversational interfaces via Telegram and WhatsApp.
@@ -31,6 +32,8 @@ Shelby integrates personal accounts (Telegram, WhatsApp), runs continuously on p
 
 Python · Claude API · Tool Use · FastAPI · Telegram Bot API · WhatsApp Business API
 
+<img width="1183" height="783" alt="Screenshot 2026-05-17 at 3 58 23 PM" src="https://github.com/user-attachments/assets/b653ea86-974a-4eac-8a80-dbd7f1464e6f" />
+<img width="1184" height="785" alt="Screenshot 2026-05-17 at 4 00 22 PM" src="https://github.com/user-attachments/assets/16d663f6-1334-4685-8e42-8e5c16cf7b56" />
 ---
 
 Built by [Kushaan Kaushik](https://github.com/kuxhaan7) · [Portfolio](https://kuxhaan7.github.io) · [LinkedIn](https://linkedin.com/in/kushaankaushik)
