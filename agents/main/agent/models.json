@@ -1,0 +1,10 @@
+{
+  "providers": {
+    "ollama": {
+      "baseUrl": "http://127.0.0.1:11434",
+      "api": "ollama",
+      "models": [],
+      "apiKey": "OLLAMA_API_KEY"
+    }
+  }
+}
