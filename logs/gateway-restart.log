@@ -1,8 +1,0 @@
-[17-05-2026 14:51:45.60] openclaw restart log initialized
-[17-05-2026 14:51:45.61] openclaw restart attempt source=windows-task-handoff target="OpenClaw Gateway"
-[17-05-2026 14:51:45.89] openclaw restart fallback source=windows-task-handoff
-[17-05-2026 14:51:45.91] openclaw restart finished source=windows-task-handoff
-[17-05-2026 14:54:28.35] openclaw restart log initialized
-[17-05-2026 14:54:28.35] openclaw restart attempt source=windows-task-handoff target="OpenClaw Gateway"
-[17-05-2026 14:54:28.62] openclaw restart fallback source=windows-task-handoff
-[17-05-2026 14:54:28.64] openclaw restart finished source=windows-task-handoff
