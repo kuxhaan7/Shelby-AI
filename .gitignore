@@ -1,0 +1,32 @@
+# Environment
+.env
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Runtime data
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# OpenClaw runtime (never commit these)
+openclaw.json*
+gateway*.json
+gateway.cmd
+agents/
+completions/
+credentials/
+flows/
+identity/
+logs/
+memory/
+plugin-skills/
+plugins/
+tasks/
+telegram/
+update-check.json
+workspace/
