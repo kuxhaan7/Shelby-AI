@@ -12,3 +12,4 @@ numpy>=1.26.0
 rich>=13.0.0
 python-telegram-bot>=21.0
 headroom-ai[all]>=0.32.1
+tavily-python>=0.3.0

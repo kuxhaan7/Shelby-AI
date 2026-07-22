@@ -17,8 +17,10 @@ from telegram.ext import (
 )
 
 from shelby.agent import ShelbyAgent, TokenUsage
+from shelby.memory.notes import NotesStore
 from shelby.rag.ingest import ingest_workspace
 from shelby.rag.store import RagStore
+from shelby.skills.registry import SkillRegistry
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -37,7 +39,11 @@ def _get_agent() -> ShelbyAgent:
     if _agent is None:
         rag = RagStore()
         ingest_workspace(rag)
-        _agent = ShelbyAgent(rag_store=rag)
+        _agent = ShelbyAgent(
+            rag_store=rag,
+            notes_store=NotesStore(),
+            skill_registry=SkillRegistry(),
+        )
     return _agent
 
 
