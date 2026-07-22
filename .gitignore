@@ -23,10 +23,10 @@ credentials/
 flows/
 identity/
 logs/
-memory/
+/memory/
 plugin-skills/
 plugins/
 tasks/
-telegram/
+/telegram/
 update-check.json
 workspace/
