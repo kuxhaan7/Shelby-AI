@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from collections import defaultdict
+from io import BytesIO
 
 from telegram import Update
 from telegram.constants import ChatAction
@@ -21,6 +22,7 @@ from shelby.memory.notes import NotesStore
 from shelby.rag.ingest import ingest_workspace
 from shelby.rag.store import RagStore
 from shelby.skills.registry import SkillRegistry
+from shelby.tts.elevenlabs import synthesise
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -48,12 +50,15 @@ def _get_agent() -> ShelbyAgent:
 
 
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    tts_status = "on 🔊" if os.getenv("ELEVENLABS_API_KEY") else "off (set ELEVENLABS_API_KEY to enable)"
     await update.message.reply_text(
         "Hey! I'm Shelby — your Claude-powered assistant.\n"
         "Just send me a message to get started.\n\n"
         "Commands:\n"
-        "  /clear — wipe your conversation history\n"
-        "  /help  — show this message"
+        "  /clear  — wipe your conversation history\n"
+        "  /voice  — toggle voice replies on/off\n"
+        "  /help   — show this message\n\n"
+        f"Voice: {tts_status}"
     )
 
 
@@ -67,6 +72,20 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await cmd_start(update, ctx)
 
 
+# Per-user voice toggle: True = voice on, False = text only
+_voice_enabled: dict[int, bool] = defaultdict(lambda: bool(os.getenv("ELEVENLABS_API_KEY")))
+
+
+async def cmd_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    if not os.getenv("ELEVENLABS_API_KEY"):
+        await update.message.reply_text("Voice is unavailable — ELEVENLABS_API_KEY is not set.")
+        return
+    _voice_enabled[user_id] = not _voice_enabled[user_id]
+    state = "on 🔊" if _voice_enabled[user_id] else "off 🔇"
+    await update.message.reply_text(f"Voice replies {state}")
+
+
 async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     text = update.message.text.strip()
@@ -77,7 +96,6 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
     history = _histories[user_id]
     history.append({"role": "user", "content": text})
 
-    # Show typing indicator while Shelby thinks
     await update.message.chat.send_action(ChatAction.TYPING)
 
     try:
@@ -90,8 +108,18 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
 
     history.append({"role": "assistant", "content": reply})
 
+    # Send text reply
     for chunk in _split(reply, 4096):
         await update.message.reply_text(chunk)
+
+    # Send voice reply if enabled for this user
+    if _voice_enabled[user_id]:
+        await update.message.chat.send_action(ChatAction.RECORD_VOICE)
+        audio = synthesise(reply)
+        if audio:
+            buf = BytesIO(audio)
+            buf.name = "shelby.mp3"
+            await update.message.reply_voice(voice=buf)
 
     if usage and os.getenv("SHELBY_SHOW_TOKENS"):
         await update.message.reply_text(
@@ -114,15 +142,12 @@ def run() -> None:
     if not token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN environment variable is not set.")
 
-    app = (
-        Application.builder()
-        .token(token)
-        .build()
-    )
+    app = Application.builder().token(token).build()
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("clear", cmd_clear))
+    app.add_handler(CommandHandler("voice", cmd_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     log.info("Shelby Telegram bot is running...")
