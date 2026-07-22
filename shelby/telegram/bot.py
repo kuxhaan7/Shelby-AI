@@ -197,22 +197,34 @@ def _split(text: str, limit: int) -> list[str]:
     return chunks
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+# ── Entry points ──────────────────────────────────────────────────────────────
 
-def run() -> None:
+def build_app(shared_agent: ShelbyAgent | None = None) -> Application:
+    """Build and return the configured Telegram Application.
+
+    Pass *shared_agent* to reuse an agent instance created elsewhere (e.g.
+    the FastAPI lifespan). When None, the bot creates its own agent lazily.
+    """
+    global _agent
+    if shared_agent is not None:
+        _agent = shared_agent
+
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is not set.")
 
     app = Application.builder().token(token).build()
-
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("clear", cmd_clear))
     app.add_handler(CommandHandler("testvoice", cmd_testvoice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+    return app
 
+
+def run() -> None:
+    app = build_app()
     log.info("Shelby running — text→text, voice→voice")
     app.run_polling(drop_pending_updates=True)
 
