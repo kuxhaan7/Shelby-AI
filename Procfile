@@ -1,1 +1,1 @@
-worker: python -m shelby.telegram.bot
+web: uvicorn shelby.api.main:app --host 0.0.0.0 --port $PORT
