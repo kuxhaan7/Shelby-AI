@@ -15,7 +15,7 @@ _DATA_DIR = Path("data")
 _TASKS_FILE = _DATA_DIR / "scheduled_tasks.json"
 
 # Heartbeat interval in minutes
-_HEARTBEAT_MINUTES = 5
+_HEARTBEAT_MINUTES = 30
 
 
 class TaskScheduler:
