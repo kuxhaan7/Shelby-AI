@@ -7,8 +7,10 @@ __pycache__/
 dist/
 build/
 
-# Runtime data
+# Runtime data (exclude bundled skills)
 data/
+!data/skills/
+!data/skills/*.py
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
