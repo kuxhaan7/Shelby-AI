@@ -147,6 +147,53 @@ TOOL_SCHEMAS = [
         "description": "List all skills Shelby has learned, with their names and descriptions.",
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
+    {
+        "name": "schedule_task",
+        "description": (
+            "Schedule a learned skill to run automatically on a cron schedule. "
+            "The skill must already exist (use learn_skill first). "
+            "Example: run 'fetch_headlines' every morning at 8am UTC → cron='0 8 * * *'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Unique name for this scheduled task, e.g. 'morning_headlines'.",
+                },
+                "cron": {
+                    "type": "string",
+                    "description": "Standard 5-field cron expression, e.g. '0 9 * * 1-5' for weekdays at 9am UTC.",
+                },
+                "skill_name": {
+                    "type": "string",
+                    "description": "Name of the skill to run (must exist in the skill registry).",
+                },
+                "kwargs": {
+                    "type": "object",
+                    "description": "Optional keyword arguments to pass to the skill's run() function.",
+                    "default": {},
+                },
+            },
+            "required": ["name", "cron", "skill_name"],
+        },
+    },
+    {
+        "name": "list_tasks",
+        "description": "List all scheduled cron tasks, including their schedule, skill, and next run time.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "cancel_task",
+        "description": "Cancel and remove a scheduled task by name.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Name of the task to cancel."},
+            },
+            "required": ["name"],
+        },
+    },
 ]
 
 
@@ -244,6 +291,35 @@ def list_skills(_: dict, skill_registry=None) -> str:
     return "\n".join(f"• {s['name']}: {s['description']}" for s in skills)
 
 
+def schedule_task(args: dict, task_scheduler=None) -> str:
+    if task_scheduler is None:
+        return "Task scheduler not initialised."
+    return task_scheduler.schedule(
+        name=args["name"],
+        cron=args["cron"],
+        skill_name=args["skill_name"],
+        kwargs=args.get("kwargs") or {},
+    )
+
+
+def list_tasks(_: dict, task_scheduler=None) -> str:
+    if task_scheduler is None:
+        return "Task scheduler not initialised."
+    tasks = task_scheduler.list_tasks()
+    if not tasks:
+        return "No scheduled tasks. Use schedule_task to create one."
+    lines = []
+    for t in tasks:
+        lines.append(f"• {t['name']} | cron: {t['cron']} | skill: {t['skill']} | next: {t['next_run']}")
+    return "\n".join(lines)
+
+
+def cancel_task(args: dict, task_scheduler=None) -> str:
+    if task_scheduler is None:
+        return "Task scheduler not initialised."
+    return task_scheduler.cancel(args["name"])
+
+
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
 def dispatch(
@@ -252,6 +328,7 @@ def dispatch(
     rag_store=None,
     notes_store=None,
     skill_registry=None,
+    task_scheduler=None,
 ) -> Any:
     match tool_name:
         case "get_current_time":
@@ -274,5 +351,11 @@ def dispatch(
             return run_skill(tool_input, skill_registry)
         case "list_skills":
             return list_skills(tool_input, skill_registry)
+        case "schedule_task":
+            return schedule_task(tool_input, task_scheduler)
+        case "list_tasks":
+            return list_tasks(tool_input, task_scheduler)
+        case "cancel_task":
+            return cancel_task(tool_input, task_scheduler)
         case _:
             return f"Unknown tool: {tool_name}"
