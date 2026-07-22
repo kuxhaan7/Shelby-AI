@@ -9,7 +9,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
-_SCHEMA = '{"score": <0.0-1.0>, "reasoning": "<one sentence>"}'
+_SCHEMA = '{{"score": <0.0-1.0>, "reasoning": "<one sentence>"}}'
 
 _FAITHFULNESS_PROMPT = ChatPromptTemplate.from_messages([
     ("system", "You are an impartial judge. Respond ONLY with valid JSON: " + _SCHEMA),
@@ -22,7 +22,7 @@ _FAITHFULNESS_PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 _RELEVANCE_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", "You are an impartial judge. Respond ONLY with valid JSON: " + _SCHEMA),
+    ("system", "You are an impartial judge. Respond ONLY with valid JSON: " + _SCHEMA),  # noqa: E501
     ("human", (
         "Question:\n{question}\n\n"
         "Answer:\n{prediction}\n\n"
@@ -32,7 +32,7 @@ _RELEVANCE_PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 _CONCISENESS_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", "You are an impartial judge. Respond ONLY with valid JSON: " + _SCHEMA),
+    ("system", "You are an impartial judge. Respond ONLY with valid JSON: " + _SCHEMA),  # noqa: E501
     ("human", (
         "Question:\n{question}\n\n"
         "Answer:\n{prediction}\n\n"
