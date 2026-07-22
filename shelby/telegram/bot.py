@@ -16,7 +16,7 @@ from telegram.ext import (
     filters,
 )
 
-from shelby.agent import ShelbyAgent
+from shelby.agent import ShelbyAgent, TokenUsage
 from shelby.rag.ingest import ingest_workspace
 from shelby.rag.store import RagStore
 
@@ -76,16 +76,21 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
 
     try:
         agent = _get_agent()
-        reply = agent.chat(history)
+        reply, usage = agent.chat_with_usage(history)
     except Exception as exc:
         log.exception("Agent error for user %s", user_id)
         reply = f"Something went wrong: {exc}"
+        usage = None
 
     history.append({"role": "assistant", "content": reply})
 
-    # Telegram has a 4096-char message limit; split if needed
     for chunk in _split(reply, 4096):
         await update.message.reply_text(chunk)
+
+    if usage and os.getenv("SHELBY_SHOW_TOKENS"):
+        await update.message.reply_text(
+            f"📊 `{usage.summary()}`", parse_mode="Markdown"
+        )
 
 
 def _split(text: str, limit: int) -> list[str]:
