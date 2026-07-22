@@ -1,4 +1,4 @@
-"""Telegram bot that routes messages through ShelbyAgent."""
+"""Telegram bot — text in → text out, voice in → voice out."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from telegram.ext import (
     filters,
 )
 
-from shelby.agent import ShelbyAgent, TokenUsage
+from shelby.agent import ShelbyAgent
 from shelby.memory.notes import NotesStore
 from shelby.rag.ingest import ingest_workspace
 from shelby.rag.store import RagStore
@@ -32,7 +32,6 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 _histories: dict[int, list[dict]] = defaultdict(list)
-_voice_enabled: dict[int, bool] = defaultdict(lambda: bool(os.getenv("ELEVENLABS_API_KEY")))
 _agent: ShelbyAgent | None = None
 
 
@@ -54,84 +53,60 @@ def _get_agent() -> ShelbyAgent:
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     tts = bool(os.getenv("ELEVENLABS_API_KEY"))
     await update.message.reply_text(
-        "Hey! I'm Shelby — your AI assistant.\n\n"
-        "You can talk to me by:\n"
-        "  • Typing a message\n"
-        "  • Sending a voice message 🎤\n\n"
-        "Commands:\n"
-        "  /voice  — toggle voice replies on/off\n"
-        "  /clear  — wipe conversation history\n"
-        "  /help   — this message\n\n"
-        f"Voice: {'on 🔊' if tts else 'off (set ELEVENLABS_API_KEY)'}"
+        "Hey! I'm Shelby.\n\n"
+        "• Type → I reply in text\n"
+        "• Send voice 🎤 → I reply in voice\n\n"
+        "Commands: /clear /testvoice /help\n"
+        f"Voice: {'ready 🔊' if tts else 'unavailable (no ELEVENLABS_API_KEY)'}"
     )
 
 
 async def cmd_clear(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     _histories[update.effective_user.id].clear()
-    await update.message.reply_text("History cleared. Fresh start!")
+    await update.message.reply_text("History cleared.")
 
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await cmd_start(update, ctx)
 
 
-async def cmd_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
-    if not os.getenv("ELEVENLABS_API_KEY"):
-        await update.message.reply_text("Voice unavailable — ELEVENLABS_API_KEY not set.")
-        return
-    _voice_enabled[user_id] = not _voice_enabled[user_id]
-    state = "on 🔊" if _voice_enabled[user_id] else "off 🔇"
-    await update.message.reply_text(f"Voice replies {state}")
-
-
 async def cmd_testvoice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Diagnose TTS step by step and report exactly where it fails."""
-    steps = []
-
-    # Step 1: API key
     api_key = os.getenv("ELEVENLABS_API_KEY")
     if not api_key:
-        await update.message.reply_text("❌ ELEVENLABS_API_KEY is not set in Railway env vars.")
+        await update.message.reply_text("❌ ELEVENLABS_API_KEY not set.")
         return
-    steps.append("✅ ELEVENLABS_API_KEY found")
 
-    # Step 2: ffmpeg
     import subprocess as sp
     try:
         r = sp.run(["ffmpeg", "-version"], capture_output=True, timeout=5)
-        steps.append(f"✅ ffmpeg found ({r.stdout.decode().splitlines()[0]})")
+        ffmpeg_ver = r.stdout.decode().splitlines()[0]
     except FileNotFoundError:
-        steps.append("❌ ffmpeg not found")
-        await update.message.reply_text("\n".join(steps))
+        await update.message.reply_text("❌ ffmpeg not found in container.")
         return
 
-    # Step 3: ElevenLabs API call
-    await update.message.reply_text("Running TTS test… " + " → ".join(steps))
+    await update.message.reply_text(f"✅ ffmpeg: {ffmpeg_ver}\nCalling ElevenLabs…")
+
     audio, err = synthesise("Hello, I am Shelby. Voice test successful.")
     if err:
         await update.message.reply_text(f"❌ TTS failed: {err}")
         return
-    steps.append(f"✅ ElevenLabs returned {len(audio):,} bytes of OGG audio")
 
-    # Step 4: Send voice
     try:
         buf = BytesIO(audio)
         buf.name = "test.ogg"
         await update.message.reply_voice(voice=buf)
-        await update.message.reply_text("✅ Voice working perfectly!")
+        await update.message.reply_text("✅ Voice working!")
     except Exception as exc:
-        await update.message.reply_text(f"❌ Telegram rejected the voice file: {exc}")
+        await update.message.reply_text(f"❌ Telegram rejected voice: {exc}")
 
 
-# ── Core message handler ──────────────────────────────────────────────────────
+# ── Core logic ────────────────────────────────────────────────────────────────
 
-async def _process(update: Update, user_text: str) -> None:
-    """Shared logic: run agent on user_text, reply with text + optional voice."""
+async def _process(update: Update, user_text: str, reply_with_voice: bool) -> None:
     user_id = update.effective_user.id
     history = _histories[user_id]
 
-    # First message of session — inject stored memory so Shelby knows the user
+    # Inject stored memory on first turn of each session
     if not history:
         agent = _get_agent()
         memory_dump = agent._notes.dump()
@@ -142,7 +117,7 @@ async def _process(update: Update, user_text: str) -> None:
                 f"[SYSTEM CONTEXT — not from the user]\n"
                 f"Telegram user: {tg_user.full_name} (@{tg_user.username}, id={user_id})\n"
                 f"Stored memory:\n{memory_dump}\n"
-                f"Use this to personalise your responses. Don't mention this injection."
+                "Use this to personalise your responses. Don't mention this injection."
             ),
         })
         history.append({"role": "assistant", "content": "Understood. Memory loaded."})
@@ -161,10 +136,7 @@ async def _process(update: Update, user_text: str) -> None:
 
     history.append({"role": "assistant", "content": reply})
 
-    for chunk in _split(reply, 4096):
-        await update.message.reply_text(chunk)
-
-    if _voice_enabled[user_id]:
+    if reply_with_voice:
         await update.message.chat.send_action(ChatAction.RECORD_VOICE)
         audio, tts_err = synthesise(reply)
         if audio:
@@ -174,8 +146,16 @@ async def _process(update: Update, user_text: str) -> None:
                 await update.message.reply_voice(voice=buf)
             except Exception as exc:
                 log.error("Telegram rejected voice: %s", exc)
+                # Fall back to text so the user gets something
+                for chunk in _split(reply, 4096):
+                    await update.message.reply_text(chunk)
         else:
-            log.warning("TTS failed for user %s: %s", user_id, tts_err)
+            log.warning("TTS failed: %s — falling back to text", tts_err)
+            for chunk in _split(reply, 4096):
+                await update.message.reply_text(chunk)
+    else:
+        for chunk in _split(reply, 4096):
+            await update.message.reply_text(chunk)
 
     if usage and os.getenv("SHELBY_SHOW_TOKENS"):
         await update.message.reply_text(f"📊 `{usage.summary()}`", parse_mode="Markdown")
@@ -184,15 +164,12 @@ async def _process(update: Update, user_text: str) -> None:
 async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     text = update.message.text.strip()
     if text:
-        await _process(update, text)
+        await _process(update, text, reply_with_voice=False)
 
 
 async def handle_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Receive a voice message, transcribe it, then process like text."""
     if not os.getenv("ELEVENLABS_API_KEY"):
-        await update.message.reply_text(
-            "Voice input requires ELEVENLABS_API_KEY to be set."
-        )
+        await update.message.reply_text("Voice requires ELEVENLABS_API_KEY.")
         return
 
     await update.message.chat.send_action(ChatAction.TYPING)
@@ -202,12 +179,10 @@ async def handle_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     text = transcribe(audio_bytes)
     if not text:
-        await update.message.reply_text("Sorry, I couldn't understand that. Try again?")
+        await update.message.reply_text("Couldn't understand that. Try again?")
         return
 
-    # Show what was heard so the user knows transcription worked
-    await update.message.reply_text(f"_🎤 {text}_", parse_mode="Markdown")
-    await _process(update, text)
+    await _process(update, text, reply_with_voice=True)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -234,12 +209,11 @@ def run() -> None:
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("clear", cmd_clear))
-    app.add_handler(CommandHandler("voice", cmd_voice))
     app.add_handler(CommandHandler("testvoice", cmd_testvoice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
 
-    log.info("Shelby Telegram bot is running (voice in + voice out enabled)...")
+    log.info("Shelby running — text→text, voice→voice")
     app.run_polling(drop_pending_updates=True)
 
 
