@@ -129,9 +129,14 @@ async def _process(update: Update, user_text: str) -> None:
         await update.message.chat.send_action(ChatAction.RECORD_VOICE)
         audio = synthesise(reply)
         if audio:
-            buf = BytesIO(audio)
-            buf.name = "shelby.mp3"
-            await update.message.reply_voice(voice=buf)
+            try:
+                buf = BytesIO(audio)
+                buf.name = "shelby.ogg"
+                await update.message.reply_voice(voice=buf)
+            except Exception as exc:
+                log.error("Failed to send voice message: %s", exc)
+        else:
+            log.warning("TTS returned no audio for user %s", user_id)
 
     if usage and os.getenv("SHELBY_SHOW_TOKENS"):
         await update.message.reply_text(f"📊 `{usage.summary()}`", parse_mode="Markdown")
