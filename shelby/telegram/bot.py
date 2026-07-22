@@ -85,6 +85,45 @@ async def cmd_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(f"Voice replies {state}")
 
 
+async def cmd_testvoice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Diagnose TTS step by step and report exactly where it fails."""
+    steps = []
+
+    # Step 1: API key
+    api_key = os.getenv("ELEVENLABS_API_KEY")
+    if not api_key:
+        await update.message.reply_text("❌ ELEVENLABS_API_KEY is not set in Railway env vars.")
+        return
+    steps.append("✅ ELEVENLABS_API_KEY found")
+
+    # Step 2: ffmpeg
+    import subprocess as sp
+    try:
+        r = sp.run(["ffmpeg", "-version"], capture_output=True, timeout=5)
+        steps.append(f"✅ ffmpeg found ({r.stdout.decode().splitlines()[0]})")
+    except FileNotFoundError:
+        steps.append("❌ ffmpeg not found")
+        await update.message.reply_text("\n".join(steps))
+        return
+
+    # Step 3: ElevenLabs API call
+    await update.message.reply_text("Running TTS test… " + " → ".join(steps))
+    audio, err = synthesise("Hello, I am Shelby. Voice test successful.")
+    if err:
+        await update.message.reply_text(f"❌ TTS failed: {err}")
+        return
+    steps.append(f"✅ ElevenLabs returned {len(audio):,} bytes of OGG audio")
+
+    # Step 4: Send voice
+    try:
+        buf = BytesIO(audio)
+        buf.name = "test.ogg"
+        await update.message.reply_voice(voice=buf)
+        await update.message.reply_text("✅ Voice working perfectly!")
+    except Exception as exc:
+        await update.message.reply_text(f"❌ Telegram rejected the voice file: {exc}")
+
+
 # ── Core message handler ──────────────────────────────────────────────────────
 
 async def _process(update: Update, user_text: str) -> None:
@@ -127,16 +166,16 @@ async def _process(update: Update, user_text: str) -> None:
 
     if _voice_enabled[user_id]:
         await update.message.chat.send_action(ChatAction.RECORD_VOICE)
-        audio = synthesise(reply)
+        audio, tts_err = synthesise(reply)
         if audio:
             try:
                 buf = BytesIO(audio)
                 buf.name = "shelby.ogg"
                 await update.message.reply_voice(voice=buf)
             except Exception as exc:
-                log.error("Failed to send voice message: %s", exc)
+                log.error("Telegram rejected voice: %s", exc)
         else:
-            log.warning("TTS returned no audio for user %s", user_id)
+            log.warning("TTS failed for user %s: %s", user_id, tts_err)
 
     if usage and os.getenv("SHELBY_SHOW_TOKENS"):
         await update.message.reply_text(f"📊 `{usage.summary()}`", parse_mode="Markdown")
@@ -196,6 +235,7 @@ def run() -> None:
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("clear", cmd_clear))
     app.add_handler(CommandHandler("voice", cmd_voice))
+    app.add_handler(CommandHandler("testvoice", cmd_testvoice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
 
