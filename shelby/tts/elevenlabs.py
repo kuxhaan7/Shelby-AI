@@ -12,12 +12,11 @@ DEFAULT_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
 DEFAULT_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_turbo_v2_5")
 
 
-def synthesise(text: str) -> bytes | None:
-    """Convert text to OGG Opus bytes for Telegram reply_voice. Returns None on failure."""
+def synthesise(text: str) -> tuple[bytes | None, str | None]:
+    """Convert text to OGG Opus bytes. Returns (audio_bytes, error_msg)."""
     api_key = os.getenv("ELEVENLABS_API_KEY")
     if not api_key:
-        log.debug("ELEVENLABS_API_KEY not set — TTS skipped.")
-        return None
+        return None, "ELEVENLABS_API_KEY is not set in environment"
 
     max_chars = int(os.getenv("ELEVENLABS_MAX_CHARS", "3000"))
     if len(text) > max_chars:
@@ -33,15 +32,18 @@ def synthesise(text: str) -> bytes | None:
             output_format="mp3_44100_128",
         )
         mp3_bytes = b"".join(mp3_chunks)
+        if not mp3_bytes:
+            return None, "ElevenLabs returned empty audio"
     except Exception as exc:
         log.error("ElevenLabs TTS API error: %s", exc)
-        return None
+        return None, f"ElevenLabs API error: {exc}"
 
-    return _mp3_to_ogg(mp3_bytes)
+    ogg, err = _mp3_to_ogg(mp3_bytes)
+    return ogg, err
 
 
-def _mp3_to_ogg(mp3_bytes: bytes) -> bytes | None:
-    """Convert MP3 bytes to OGG Opus bytes using ffmpeg (required by Telegram sendVoice)."""
+def _mp3_to_ogg(mp3_bytes: bytes) -> tuple[bytes | None, str | None]:
+    """Convert MP3 bytes to OGG Opus. Returns (ogg_bytes, error_msg)."""
     try:
         result = subprocess.run(
             [
@@ -58,12 +60,13 @@ def _mp3_to_ogg(mp3_bytes: bytes) -> bytes | None:
             timeout=30,
         )
         if result.returncode != 0:
-            log.error("ffmpeg conversion failed: %s", result.stderr.decode())
-            return None
-        return result.stdout
+            err = result.stderr.decode(errors="replace")
+            log.error("ffmpeg failed: %s", err)
+            return None, f"ffmpeg conversion failed: {err[-200:]}"
+        if not result.stdout:
+            return None, "ffmpeg produced empty output"
+        return result.stdout, None
     except FileNotFoundError:
-        log.error("ffmpeg not found — cannot convert MP3 to OGG. Install ffmpeg.")
-        return None
+        return None, "ffmpeg not found — not installed in this environment"
     except Exception as exc:
-        log.error("ffmpeg error: %s", exc)
-        return None
+        return None, f"ffmpeg error: {exc}"
