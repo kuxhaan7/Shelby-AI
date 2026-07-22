@@ -1,11 +1,14 @@
-"""Tool definitions for Claude function calling."""
+"""Tool definitions and implementations for Shelby's Claude function-calling loop."""
+
+from __future__ import annotations
 
 import json
 import math
+import os
 from datetime import datetime, timezone
 from typing import Any
 
-# ── Tool schemas (passed to Anthropic API) ──────────────────────────────────
+# ── Tool schemas ─────────────────────────────────────────────────────────────
 
 TOOL_SCHEMAS = [
     {
@@ -21,17 +24,36 @@ TOOL_SCHEMAS = [
             "properties": {
                 "expression": {
                     "type": "string",
-                    "description": "A Python-evaluable math expression, e.g. '2 ** 10' or 'math.sqrt(144)'.",
+                    "description": "A Python-evaluable math expression, e.g. '2**10' or 'math.sqrt(144)'.",
                 }
             },
             "required": ["expression"],
         },
     },
     {
+        "name": "web_search",
+        "description": (
+            "Search the live web using Tavily and return relevant results. "
+            "Use for current events, facts you don't know, or any real-time data."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query."},
+                "max_results": {
+                    "type": "integer",
+                    "description": "Number of results to return (default 5, max 10).",
+                    "default": 5,
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
         "name": "search_knowledge_base",
         "description": (
-            "Search Shelby's persistent knowledge base (RAG store) for context "
-            "relevant to the query. Returns the top matching passages."
+            "Search Shelby's persistent knowledge base (RAG) for previously stored context. "
+            "Always try this before web_search for topics you may have seen before."
         ),
         "input_schema": {
             "type": "object",
@@ -44,20 +66,91 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "remember",
-        "description": "Store a key fact or note into Shelby's knowledge base for future retrieval.",
+        "description": "Store a passage or note into Shelby's semantic knowledge base for future retrieval.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "text": {"type": "string", "description": "The fact or note to remember."},
-                "source": {"type": "string", "description": "Optional label for where this came from."},
+                "text": {"type": "string", "description": "The text to remember."},
+                "source": {"type": "string", "description": "Optional label for provenance."},
             },
             "required": ["text"],
         },
     },
+    {
+        "name": "write_memory",
+        "description": (
+            "Write a structured key-value fact into Shelby's persistent memory. "
+            "Use for user preferences, important facts, or anything Shelby should always know. "
+            "Example: key='user_name', value='Kaushik'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "description": "Short identifier for the memory, e.g. 'user_timezone'."},
+                "value": {"type": "string", "description": "The value to store."},
+            },
+            "required": ["key", "value"],
+        },
+    },
+    {
+        "name": "read_memory",
+        "description": "Read a specific key from Shelby's structured memory, or list all keys if no key given.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "description": "The memory key to retrieve. Omit to list all keys."},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "learn_skill",
+        "description": (
+            "Write and save a new Python skill that Shelby can run later. "
+            "The code MUST define a `run(**kwargs) -> str` function. "
+            "Skills persist across sessions. Use this to teach Shelby reusable capabilities."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Short snake_case name for the skill, e.g. 'get_weather'."},
+                "description": {"type": "string", "description": "One sentence describing what the skill does."},
+                "code": {
+                    "type": "string",
+                    "description": (
+                        "Complete Python code defining `run(**kwargs) -> str`. "
+                        "May import stdlib or requests. Must return a string."
+                    ),
+                },
+            },
+            "required": ["name", "description", "code"],
+        },
+    },
+    {
+        "name": "run_skill",
+        "description": "Execute a previously learned skill by name and return its output.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Skill name (as saved with learn_skill)."},
+                "args": {
+                    "type": "object",
+                    "description": "Arguments to pass to the skill's run() function.",
+                    "default": {},
+                },
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "list_skills",
+        "description": "List all skills Shelby has learned, with their names and descriptions.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
 ]
 
 
-# ── Tool implementations ─────────────────────────────────────────────────────
+# ── Implementations ──────────────────────────────────────────────────────────
 
 def get_current_time(_: dict) -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -65,7 +158,6 @@ def get_current_time(_: dict) -> str:
 
 def calculate(args: dict) -> str:
     expr = args["expression"]
-    # Restrict to a safe subset — no builtins except math
     allowed = {k: getattr(math, k) for k in dir(math) if not k.startswith("_")}
     allowed["abs"] = abs
     try:
@@ -75,33 +167,112 @@ def calculate(args: dict) -> str:
         return f"Error: {exc}"
 
 
+def web_search(args: dict) -> str:
+    api_key = os.getenv("TAVILY_API_KEY")
+    if not api_key:
+        return "TAVILY_API_KEY is not set — web search is unavailable."
+    try:
+        from tavily import TavilyClient
+        client = TavilyClient(api_key=api_key)
+        response = client.search(
+            query=args["query"],
+            max_results=min(int(args.get("max_results", 5)), 10),
+            include_answer=True,
+        )
+        parts = []
+        if response.get("answer"):
+            parts.append(f"Summary: {response['answer']}\n")
+        for r in response.get("results", []):
+            parts.append(f"[{r.get('title', 'untitled')}]\n{r.get('url', '')}\n{r.get('content', '')}")
+        return "\n\n---\n\n".join(parts) if parts else "No results found."
+    except Exception as exc:
+        return f"Web search error: {exc}"
+
+
 def search_knowledge_base(args: dict, rag_store=None) -> str:
     if rag_store is None:
         return "Knowledge base not initialised."
     results = rag_store.query(args["query"], n_results=args.get("n_results", 3))
     if not results:
         return "No relevant passages found."
-    return "\n\n---\n\n".join(
-        f"[{r['source']}]\n{r['text']}" for r in results
-    )
+    return "\n\n---\n\n".join(f"[{r['source']}]\n{r['text']}" for r in results)
 
 
 def remember(args: dict, rag_store=None) -> str:
     if rag_store is None:
         return "Knowledge base not initialised."
-    rag_store.add(args["text"], source=args.get("source", "user"))
-    return "Remembered."
+    rag_store.add(args["text"], source=args.get("source", "shelby"))
+    return "Stored in semantic memory."
 
 
-# ── Dispatcher ───────────────────────────────────────────────────────────────
+def write_memory(args: dict, notes_store=None) -> str:
+    if notes_store is None:
+        return "Memory store not initialised."
+    notes_store.write(args["key"], args["value"])
+    return f"Memory written: {args['key']} = {args['value']}"
 
-def dispatch(tool_name: str, tool_input: dict, rag_store=None) -> Any:
-    if tool_name == "get_current_time":
-        return get_current_time(tool_input)
-    if tool_name == "calculate":
-        return calculate(tool_input)
-    if tool_name == "search_knowledge_base":
-        return search_knowledge_base(tool_input, rag_store)
-    if tool_name == "remember":
-        return remember(tool_input, rag_store)
-    return f"Unknown tool: {tool_name}"
+
+def read_memory(args: dict, notes_store=None) -> str:
+    if notes_store is None:
+        return "Memory store not initialised."
+    key = args.get("key", "").strip()
+    if not key:
+        return notes_store.dump()
+    result = notes_store.read(key)
+    return result if result is not None else f"No memory found for key '{key}'."
+
+
+def learn_skill(args: dict, skill_registry=None) -> str:
+    if skill_registry is None:
+        return "Skill registry not initialised."
+    path = skill_registry.save(args["name"], args["description"], args["code"])
+    return f"Skill '{args['name']}' saved to {path}. Run it with run_skill."
+
+
+def run_skill(args: dict, skill_registry=None) -> str:
+    if skill_registry is None:
+        return "Skill registry not initialised."
+    return skill_registry.run(args["name"], args.get("args") or {})
+
+
+def list_skills(_: dict, skill_registry=None) -> str:
+    if skill_registry is None:
+        return "Skill registry not initialised."
+    skills = skill_registry.list()
+    if not skills:
+        return "No skills learned yet. Use learn_skill to teach Shelby new capabilities."
+    return "\n".join(f"• {s['name']}: {s['description']}" for s in skills)
+
+
+# ── Dispatcher ────────────────────────────────────────────────────────────────
+
+def dispatch(
+    tool_name: str,
+    tool_input: dict,
+    rag_store=None,
+    notes_store=None,
+    skill_registry=None,
+) -> Any:
+    match tool_name:
+        case "get_current_time":
+            return get_current_time(tool_input)
+        case "calculate":
+            return calculate(tool_input)
+        case "web_search":
+            return web_search(tool_input)
+        case "search_knowledge_base":
+            return search_knowledge_base(tool_input, rag_store)
+        case "remember":
+            return remember(tool_input, rag_store)
+        case "write_memory":
+            return write_memory(tool_input, notes_store)
+        case "read_memory":
+            return read_memory(tool_input, notes_store)
+        case "learn_skill":
+            return learn_skill(tool_input, skill_registry)
+        case "run_skill":
+            return run_skill(tool_input, skill_registry)
+        case "list_skills":
+            return list_skills(tool_input, skill_registry)
+        case _:
+            return f"Unknown tool: {tool_name}"

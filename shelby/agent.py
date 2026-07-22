@@ -9,7 +9,9 @@ from typing import Any
 
 import anthropic
 
+from .memory.notes import NotesStore
 from .rag.store import RagStore
+from .skills.registry import SkillRegistry
 from .tools import TOOL_SCHEMAS, dispatch
 
 # Ordered fallback chain: primary first, cheapest/fastest last.
@@ -27,9 +29,25 @@ MODEL_CHAIN = [m for m in MODEL_CHAIN if not (m in seen or seen.add(m))]  # type
 # Only fall back on transient / capacity errors, not on bad-request / auth errors.
 _FALLBACK_STATUS_CODES = {429, 500, 502, 503, 529}
 
-SYSTEM_PROMPT = """You are Shelby, a sharp and resourceful AI assistant.
-You have access to a persistent knowledge base (RAG) and can use tools to answer questions.
-Be concise. Use tools when they add value. Search your knowledge base before stating you don't know something."""
+SYSTEM_PROMPT = """You are Shelby — an autonomous, self-improving AI assistant.
+
+You have a full suite of tools:
+- web_search: search the live web via Tavily for any real-time or unknown information
+- search_knowledge_base: semantic search over your RAG memory of past knowledge
+- remember: store new knowledge passages into your RAG memory
+- write_memory / read_memory: read and write persistent key-value facts (user preferences, important context)
+- learn_skill: write and save a new reusable Python skill to disk
+- run_skill: execute a previously learned skill
+- list_skills: see all skills you've learned
+- calculate: evaluate math expressions
+- get_current_time: get the current UTC time
+
+Operating principles:
+1. Before saying you don't know something, search your knowledge base AND the web.
+2. When you solve a problem that required non-trivial steps, save it as a skill so you can reuse it.
+3. Learn facts about the user (name, preferences, timezone, goals) and write them to memory.
+4. Retrieve memory at the start of conversations to personalise responses.
+5. Be concise and direct. Use tools silently — don't narrate every tool call."""
 
 log = logging.getLogger(__name__)
 
@@ -84,11 +102,18 @@ def _is_fallback_error(exc: Exception) -> bool:
 
 
 class ShelbyAgent:
-    """Stateless Claude agent with an agentic tool-use loop and model fallback."""
+    """Autonomous Claude agent with tool use, RAG, memory, skills, and model fallback."""
 
-    def __init__(self, rag_store: RagStore | None = None) -> None:
+    def __init__(
+        self,
+        rag_store: RagStore | None = None,
+        notes_store: NotesStore | None = None,
+        skill_registry: SkillRegistry | None = None,
+    ) -> None:
         self._client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         self._rag = rag_store
+        self._notes = notes_store or NotesStore()
+        self._skills = skill_registry or SkillRegistry()
 
     def chat(self, messages: list[dict], max_iterations: int = 6) -> str:
         """Run the full agentic loop and return the final text response."""
@@ -139,7 +164,12 @@ class ShelbyAgent:
                 tool_results = []
                 for block in response.content:
                     if block.type == "tool_use":
-                        result = dispatch(block.name, block.input, self._rag)
+                        result = dispatch(
+                            block.name, block.input,
+                            rag_store=self._rag,
+                            notes_store=self._notes,
+                            skill_registry=self._skills,
+                        )
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,

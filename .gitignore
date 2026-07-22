@@ -22,7 +22,7 @@ completions/
 credentials/
 flows/
 identity/
-memory/
+/memory/
 plugin-skills/
 plugins/
 tasks/
