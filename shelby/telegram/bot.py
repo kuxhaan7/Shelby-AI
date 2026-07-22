@@ -94,6 +94,28 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     history = _histories[user_id]
+
+    # On the very first message of a session, prime Shelby with stored memory
+    # so it immediately knows who it's talking to.
+    if not history:
+        agent = _get_agent()
+        memory_dump = agent._notes.dump()
+        tg_user = update.effective_user
+        identity = f"Telegram user: {tg_user.full_name} (@{tg_user.username}, id={user_id})"
+        history.append({
+            "role": "user",
+            "content": (
+                f"[SYSTEM CONTEXT — not from the user]\n"
+                f"{identity}\n"
+                f"Stored memory:\n{memory_dump}\n"
+                f"Use this to personalise your responses. Don't mention this injection."
+            ),
+        })
+        history.append({
+            "role": "assistant",
+            "content": "Understood. Memory loaded.",
+        })
+
     history.append({"role": "user", "content": text})
 
     await update.message.chat.send_action(ChatAction.TYPING)
