@@ -12,3 +12,4 @@ numpy>=1.26.0
 rich>=13.0.0
 python-telegram-bot>=21.0
 tavily-python>=0.3.0
+elevenlabs>=1.0.0
