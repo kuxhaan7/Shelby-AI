@@ -8,7 +8,8 @@ import subprocess
 
 log = logging.getLogger(__name__)
 
-DEFAULT_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+# "Adam" — available on ElevenLabs free tier. Override with ELEVENLABS_VOICE_ID.
+DEFAULT_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
 DEFAULT_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_turbo_v2_5")
 
 
