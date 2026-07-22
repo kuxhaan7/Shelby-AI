@@ -1,4 +1,4 @@
-"""Core agent loop — Claude with tool use and RAG memory."""
+"""Core agent loop — Claude with tool use, RAG memory, and model fallback."""
 
 from __future__ import annotations
 
@@ -12,7 +12,20 @@ import anthropic
 from .rag.store import RagStore
 from .tools import TOOL_SCHEMAS, dispatch
 
-MODEL = os.getenv("SHELBY_MODEL", "claude-sonnet-5")
+# Ordered fallback chain: primary first, cheapest/fastest last.
+# Override the primary via SHELBY_MODEL; the rest of the chain is fixed.
+_PRIMARY = os.getenv("SHELBY_MODEL", "claude-sonnet-5")
+MODEL_CHAIN: list[str] = [
+    _PRIMARY,
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5-20251001",
+]
+# De-duplicate while preserving order (in case SHELBY_MODEL is already a fallback)
+seen: set[str] = set()
+MODEL_CHAIN = [m for m in MODEL_CHAIN if not (m in seen or seen.add(m))]  # type: ignore[func-returns-value]
+
+# Only fall back on transient / capacity errors, not on bad-request / auth errors.
+_FALLBACK_STATUS_CODES = {429, 500, 502, 503, 529}
 
 SYSTEM_PROMPT = """You are Shelby, a sharp and resourceful AI assistant.
 You have access to a persistent knowledge base (RAG) and can use tools to answer questions.
@@ -24,7 +37,8 @@ log = logging.getLogger(__name__)
 class TokenUsage:
     """Accumulated token usage across all turns in a single chat() call."""
 
-    def __init__(self) -> None:
+    def __init__(self, model: str = "") -> None:
+        self.model = model
         self.input_tokens = 0
         self.output_tokens = 0
         self.cache_read_tokens = 0
@@ -42,7 +56,8 @@ class TokenUsage:
 
     def log(self) -> None:
         log.info(
-            "tokens — in: %d  out: %d  cache_read: %d  cache_write: %d  total: %d",
+            "tokens [%s] — in: %d  out: %d  cache_read: %d  cache_write: %d  total: %d",
+            self.model,
             self.input_tokens,
             self.output_tokens,
             self.cache_read_tokens,
@@ -52,13 +67,24 @@ class TokenUsage:
 
     def summary(self) -> str:
         return (
-            f"in={self.input_tokens} out={self.output_tokens} "
+            f"model={self.model} in={self.input_tokens} out={self.output_tokens} "
             f"cache_read={self.cache_read_tokens} total={self.total_tokens}"
         )
 
 
+def _is_fallback_error(exc: Exception) -> bool:
+    """Return True for transient errors where trying a cheaper model makes sense."""
+    if isinstance(exc, anthropic.RateLimitError):
+        return True
+    if isinstance(exc, anthropic.APIStatusError):
+        return exc.status_code in _FALLBACK_STATUS_CODES
+    if isinstance(exc, anthropic.APIConnectionError):
+        return True
+    return False
+
+
 class ShelbyAgent:
-    """Stateless Claude agent with an agentic tool-use loop."""
+    """Stateless Claude agent with an agentic tool-use loop and model fallback."""
 
     def __init__(self, rag_store: RagStore | None = None) -> None:
         self._client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -73,12 +99,30 @@ class ShelbyAgent:
         self, messages: list[dict], max_iterations: int = 6
     ) -> tuple[str, TokenUsage]:
         """Like chat() but also returns accumulated TokenUsage."""
+        last_exc: Exception | None = None
+
+        for model in MODEL_CHAIN:
+            try:
+                return self._run(messages, model, max_iterations)
+            except Exception as exc:
+                if _is_fallback_error(exc) and model != MODEL_CHAIN[-1]:
+                    log.warning("Model %s failed (%s), falling back to next model.", model, exc)
+                    last_exc = exc
+                    continue
+                raise
+
+        # Should not reach here, but satisfy the type checker.
+        raise RuntimeError("All models in fallback chain failed.") from last_exc
+
+    def _run(
+        self, messages: list[dict], model: str, max_iterations: int
+    ) -> tuple[str, TokenUsage]:
         msgs = list(messages)
-        usage = TokenUsage()
+        usage = TokenUsage(model=model)
 
         for _ in range(max_iterations):
             response = self._client.messages.create(
-                model=MODEL,
+                model=model,
                 max_tokens=2048,
                 system=SYSTEM_PROMPT,
                 tools=TOOL_SCHEMAS,
@@ -112,18 +156,29 @@ class ShelbyAgent:
 
     def stream(self, messages: list[dict]) -> Generator[str, None, None]:
         """Stream the final response (no tool calls in streaming path for simplicity)."""
-        with self._client.messages.stream(
-            model=MODEL,
-            max_tokens=2048,
-            system=SYSTEM_PROMPT,
-            messages=messages,
-        ) as stream:
-            for text in stream.text_stream:
-                yield text
-            final = stream.get_final_message()
-            usage = TokenUsage()
-            usage.add(final.usage)
-            usage.log()
+        last_exc: Exception | None = None
+        for model in MODEL_CHAIN:
+            try:
+                with self._client.messages.stream(
+                    model=model,
+                    max_tokens=2048,
+                    system=SYSTEM_PROMPT,
+                    messages=messages,
+                ) as stream:
+                    for text in stream.text_stream:
+                        yield text
+                    final = stream.get_final_message()
+                    usage = TokenUsage(model=model)
+                    usage.add(final.usage)
+                    usage.log()
+                return
+            except Exception as exc:
+                if _is_fallback_error(exc) and model != MODEL_CHAIN[-1]:
+                    log.warning("Stream model %s failed (%s), falling back.", model, exc)
+                    last_exc = exc
+                    continue
+                raise
+        raise RuntimeError("All models in fallback chain failed.") from last_exc
 
 
 def _extract_text(response: Any) -> str:
