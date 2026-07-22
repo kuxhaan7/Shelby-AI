@@ -100,6 +100,66 @@ All tests run without `ANTHROPIC_API_KEY` — only the live LLM eval runner
 
 ---
 
+## Bug 3 — `ChatPromptTemplate` parses literal `{score}` as a missing template variable
+
+**File:** `shelby/evals/evaluators.py`  
+**Severity:** High (all eval scores returned `None` — evaluators silently failed on every sample)
+
+### What broke
+When the live eval runner was first executed with a real API key, every score
+came back `N/A` and the error message was:
+
+```
+Input to ChatPromptTemplate is missing variables {'"score"'}
+```
+
+The `_SCHEMA` string used single curly braces:
+
+```python
+_SCHEMA = '{"score": <0.0-1.0>, "reasoning": "<one sentence>"}'
+```
+
+LangChain's `ChatPromptTemplate` treats any `{...}` inside a string literal as
+a template variable and raises `KeyError` / `ValidationError` at invoke time
+when the variable is not supplied.
+
+### Root cause
+Python f-string / Jinja2-style escaping: single `{` → variable placeholder,
+double `{{` → literal `{`. The prompt string was injected into the template
+via string concatenation, so it was still subject to template-variable parsing.
+
+### Fix
+
+```python
+# Before — LangChain sees {score} and {reasoning} as missing variables
+_SCHEMA = '{"score": <0.0-1.0>, "reasoning": "<one sentence>"}'
+
+# After — double braces produce literal { } in the rendered prompt
+_SCHEMA = '{{"score": <0.0-1.0>, "reasoning": "<one sentence>"}}'
+```
+
+---
+
+## Final eval results (post all three fixes)
+
+Command run: `python -m shelby.evals.run`  
+Model: `claude-haiku-4-5-20251001` (via `SHELBY_EVAL_MODEL`)
+
+| # | Question (abbrev.) | Faithfulness | Relevance |
+|---|-------------------|:------------:|:---------:|
+| 1 | What is Shelby? | 1.00 ✓ | 0.85 |
+| 2 | How does memory work? | 1.00 ✓ | 0.85 |
+| 3 | What tools does Shelby have? | 1.00 ✓ | 1.00 ✓ |
+| 4 | What API does Shelby expose? | 1.00 ✓ | 0.85 |
+| **Avg** | | **1.00** | **0.89** |
+
+Faithfulness: **100% across all samples** — no hallucinations detected.  
+Relevance: **89% average** — 3 of 4 questions scored 0.85 (answers were
+correct but the judge noted they could be more directly focused on the
+question).
+
+---
+
 ## Known blocker (not a bug)
 
 `python -m shelby.evals.run` calls Claude via the Anthropic SDK.
