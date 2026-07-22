@@ -1,0 +1,527 @@
+<title>Shelby AI — Live Demo</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+  --bg: #07070f;
+  --surface: #0f0f1c;
+  --card: #16162a;
+  --border: #252540;
+  --accent: #818cf8;
+  --accent-dim: rgba(129,140,248,0.12);
+  --text: #e2e8f0;
+  --muted: #64748b;
+  --user-bg: #1a2f5a;
+  --user-text: #dbeafe;
+  --shelby-bg: #16162a;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* ── Layout ────────────────────────────────────────────────── */
+#app { display: flex; flex-direction: column; height: 100vh; max-width: 860px; margin: 0 auto; }
+
+/* ── Header ────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 54px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: rgba(7,7,15,0.9);
+  backdrop-filter: blur(8px);
+}
+.header-left { display: flex; align-items: center; gap: 10px; }
+.logo { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
+.logo span { color: var(--accent); }
+.live-badge {
+  background: #10b981;
+  color: #000;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+.caps { display: flex; gap: 6px; flex-wrap: wrap; }
+.cap {
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+#clear-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+#clear-btn:hover { color: var(--text); border-color: #4a4a70; }
+
+/* ── Chat area ─────────────────────────────────────────────── */
+.chat-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  scroll-behavior: smooth;
+}
+.chat-area::-webkit-scrollbar { width: 5px; }
+.chat-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── Messages ──────────────────────────────────────────────── */
+.message { display: flex; flex-direction: column; gap: 4px; }
+.message.user { align-items: flex-end; }
+.message.shelby { align-items: flex-start; }
+
+.bubble {
+  max-width: min(78%, 640px);
+  padding: 11px 15px;
+  border-radius: 14px;
+  font-size: 14.5px;
+  line-height: 1.65;
+  word-break: break-word;
+}
+.message.user .bubble {
+  background: var(--user-bg);
+  color: var(--user-text);
+  border: 1px solid rgba(59,130,246,0.25);
+  border-bottom-right-radius: 4px;
+}
+.message.shelby .bubble {
+  background: var(--shelby-bg);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+}
+
+/* Meta line (model name) */
+.meta { font-size: 11px; color: var(--muted); padding-left: 2px; }
+
+/* ── Markdown styles inside bubbles ────────────────────────── */
+.bubble strong { font-weight: 600; color: #f1f5f9; }
+.bubble em { font-style: italic; color: #cbd5e1; }
+.bubble h1, .bubble h2, .bubble h3 { margin: 10px 0 4px; font-weight: 700; color: #f1f5f9; }
+.bubble h1 { font-size: 1.15em; }
+.bubble h2 { font-size: 1.05em; }
+.bubble h3 { font-size: 1em; }
+.bubble ul, .bubble ol { padding-left: 22px; margin: 6px 0; }
+.bubble li { margin: 3px 0; }
+.bubble p { margin: 6px 0; }
+.bubble code {
+  background: #0c0c1a;
+  border: 1px solid #2a2a48;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 13px;
+  color: #a5b4fc;
+}
+.bubble pre {
+  background: #0a0a16;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin: 10px 0;
+  overflow-x: auto;
+}
+.bubble pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  color: #c4b5fd;
+}
+.bubble a { color: var(--accent); text-decoration: underline; }
+.bubble blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 4px 12px;
+  margin: 6px 0;
+  color: var(--muted);
+  font-style: italic;
+}
+.bubble hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+
+/* ── Thinking animation ────────────────────────────────────── */
+.thinking {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 13px 16px;
+  min-height: 44px;
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  background: var(--accent);
+  border-radius: 50%;
+  opacity: 0.5;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.dot:nth-child(2) { animation-delay: 0.22s; }
+.dot:nth-child(3) { animation-delay: 0.44s; }
+@keyframes pulse {
+  0%, 80%, 100% { transform: scale(1); opacity: 0.4; }
+  40% { transform: scale(1.35); opacity: 1; }
+}
+.thinking-label {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-left: 6px;
+  transition: opacity .3s;
+}
+
+/* ── Input bar ─────────────────────────────────────────────── */
+.input-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 12px 20px 18px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  background: rgba(7,7,15,0.9);
+}
+#input {
+  flex: 1;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14.5px;
+  line-height: 1.5;
+  padding: 10px 14px;
+  resize: none;
+  outline: none;
+  min-height: 44px;
+  max-height: 130px;
+  transition: border-color .15s;
+}
+#input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+#input::placeholder { color: var(--muted); }
+#send-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: opacity .15s, transform .1s;
+}
+#send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+#send-btn:not(:disabled):hover { opacity: 0.9; }
+#send-btn:not(:disabled):active { transform: scale(0.94); }
+#send-btn svg { width: 18px; height: 18px; }
+
+/* ── Footer hint ───────────────────────────────────────────── */
+.hint { text-align: center; font-size: 11px; color: var(--muted); padding: 0 20px 8px; flex-shrink: 0; }
+
+/* ── Mobile ────────────────────────────────────────────────── */
+@media (max-width: 560px) {
+  .caps { display: none; }
+  .bubble { max-width: 92%; }
+  .chat-area { padding: 16px 14px; }
+  .input-bar { padding: 10px 14px 16px; }
+}
+</style>
+
+<div id="app">
+  <header class="header">
+    <div class="header-left">
+      <div class="logo"><span>⚡</span> Shelby</div>
+      <div class="live-badge">Live</div>
+      <div class="caps">
+        <span class="cap">Web Search</span>
+        <span class="cap">Memory</span>
+        <span class="cap">RAG</span>
+        <span class="cap">Skills</span>
+        <span class="cap">Tool Use</span>
+      </div>
+    </div>
+    <button id="clear-btn">Clear</button>
+  </header>
+
+  <div class="chat-area" id="chat-area"></div>
+
+  <div class="input-bar">
+    <textarea id="input" placeholder="Ask Shelby anything — searches the web in real time…" rows="1" maxlength="4000"></textarea>
+    <button id="send-btn" aria-label="Send">
+      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+      </svg>
+    </button>
+  </div>
+  <div class="hint">Enter to send · Shift+Enter for newline · Powered by Claude API + ElevenLabs</div>
+</div>
+
+<script>
+const WELCOME = [
+  "Hey, I'm **Shelby** — a Claude-powered AI agent built as a live FDE role demo.",
+  "",
+  "Unlike a basic chatbot, I won't say *I don't know* — I have live web access and use it before answering.",
+  "",
+  "**What I can do:**",
+  "- 🔍 **Search the web** in real time (Tavily API)",
+  "- 🧠 **Write and read memory** — I learn and remember across sessions",
+  "- ⚙️ **Build and run skills** — I write Python code to solve novel problems",
+  "- 📚 **Search my knowledge base** via RAG (ChromaDB)",
+  "- 🧮 **Calculate** and run code",
+  "",
+  "**Try asking:**",
+  "- *What's the latest news on Claude AI?*",
+  "- *Remember that I'm a recruiter evaluating this demo*",
+  "- *Write a skill to fetch and summarise HN top stories*",
+  "- *What is the weather like in New York today?*",
+  "",
+  "What can I help you with?",
+].join("\n");
+
+let history = [];
+let loading = false;
+
+/* ── Markdown renderer ──────────────────────────────────────── */
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderMarkdown(raw) {
+  // 1. Extract fenced code blocks to protect them
+  const blocks = [];
+  let text = raw.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const i = blocks.length;
+    blocks.push({ lang: lang || '', code });
+    return `\x02BLOCK${i}\x02`;
+  });
+
+  // 2. Escape HTML in the remaining text
+  text = escapeHtml(text);
+
+  // 3. Extract inline code
+  const inlines = [];
+  text = text.replace(/`([^`\n]+)`/g, (_, code) => {
+    const i = inlines.length;
+    inlines.push(`<code>${escapeHtml(code)}</code>`);
+    return `\x03INLINE${i}\x03`;
+  });
+
+  // 4. Block-level transforms (line by line)
+  const lines = text.split('\n');
+  const out = [];
+  let inList = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Headers
+    if (/^### /.test(trimmed)) { if(inList){out.push('</ul>');inList=false;} out.push(`<h3>${trimmed.slice(4)}</h3>`); continue; }
+    if (/^## /.test(trimmed))  { if(inList){out.push('</ul>');inList=false;} out.push(`<h2>${trimmed.slice(3)}</h2>`); continue; }
+    if (/^# /.test(trimmed))   { if(inList){out.push('</ul>');inList=false;} out.push(`<h1>${trimmed.slice(2)}</h1>`); continue; }
+
+    // Horizontal rule
+    if (/^(---|\*\*\*)$/.test(trimmed)) { if(inList){out.push('</ul>');inList=false;} out.push('<hr>'); continue; }
+
+    // Bullet list
+    const bullet = trimmed.match(/^[-*•+] (.+)/);
+    if (bullet) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push(`<li>${bullet[1]}</li>`);
+      continue;
+    }
+
+    // Numbered list
+    const numbered = trimmed.match(/^\d+\. (.+)/);
+    if (numbered) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push(`<li>${numbered[1]}</li>`);
+      continue;
+    }
+
+    if (inList && !trimmed) { out.push('</ul>'); inList = false; }
+
+    // Blockquote
+    if (/^&gt; /.test(trimmed)) { out.push(`<blockquote>${trimmed.slice(5)}</blockquote>`); continue; }
+
+    out.push(line);
+  }
+  if (inList) out.push('</ul>');
+  text = out.join('\n');
+
+  // 5. Inline transforms
+  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/\*(.+?)\*/g,     '<em>$1</em>');
+  text = text.replace(/__(.+?)__/g,     '<strong>$1</strong>');
+  text = text.replace(/_(.+?)_/g,       '<em>$1</em>');
+
+  // 6. Newlines → br (except inside block elements)
+  text = text.replace(/\n/g, '<br>');
+
+  // 7. Restore inline code
+  text = text.replace(/\x03INLINE(\d+)\x03/g, (_, i) => inlines[i]);
+
+  // 8. Restore fenced code blocks (no inner <br>)
+  text = text.replace(/\x02BLOCK(\d+)\x02/g, (_, i) => {
+    const { lang, code } = blocks[i];
+    const escaped = escapeHtml(code.replace(/\n$/, ''));
+    return `<pre><code class="lang-${escapeHtml(lang)}">${escaped}</code></pre>`;
+  });
+
+  // 9. Clean up <br> around block elements
+  text = text.replace(/<br>\s*(<(?:ul|ol|li|h[1-6]|pre|blockquote|hr)[^>]*>)/g, '$1');
+  text = text.replace(/(<\/(?:ul|ol|li|h[1-6]|pre|blockquote)>)\s*<br>/g, '$1');
+
+  return text;
+}
+
+/* ── DOM helpers ────────────────────────────────────────────── */
+const chatArea = document.getElementById('chat-area');
+
+function scrollBottom() {
+  chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+function addMessage(role, html, meta) {
+  const wrap = document.createElement('div');
+  wrap.className = `message ${role}`;
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+
+  if (role === 'shelby') {
+    bubble.innerHTML = html; // already rendered markdown
+  } else {
+    bubble.textContent = html; // user text: plain
+  }
+
+  wrap.appendChild(bubble);
+
+  if (meta) {
+    const m = document.createElement('div');
+    m.className = 'meta';
+    m.textContent = meta;
+    wrap.appendChild(m);
+  }
+
+  chatArea.appendChild(wrap);
+  scrollBottom();
+  return wrap;
+}
+
+function addThinking() {
+  const wrap = document.createElement('div');
+  wrap.className = 'message shelby';
+  wrap.id = 'thinking-msg';
+  wrap.innerHTML = `<div class="bubble thinking">
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    <span class="thinking-label" id="thinking-label">Thinking…</span>
+  </div>`;
+  chatArea.appendChild(wrap);
+  scrollBottom();
+  return wrap;
+}
+
+function removeThinking() {
+  document.getElementById('thinking-msg')?.remove();
+}
+
+/* ── Send logic ─────────────────────────────────────────────── */
+const inputEl  = document.getElementById('input');
+const sendBtn  = document.getElementById('send-btn');
+const clearBtn = document.getElementById('clear-btn');
+
+function setSendEnabled(on) {
+  sendBtn.disabled = !on;
+}
+
+async function send() {
+  if (loading) return;
+  const text = inputEl.value.trim();
+  if (!text) return;
+
+  inputEl.value = '';
+  inputEl.style.height = 'auto';
+
+  addMessage('user', text);
+  history.push({ role: 'user', content: text });
+
+  addThinking();
+  loading = true;
+  setSendEnabled(false);
+
+  // After 6s, update label to signal tool use
+  const slowTimer = setTimeout(() => {
+    const lbl = document.getElementById('thinking-label');
+    if (lbl) lbl.textContent = 'Using tools…';
+  }, 6000);
+
+  try {
+    const res = await fetch('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: history, stream: false }),
+    });
+
+    clearTimeout(slowTimer);
+    removeThinking();
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => res.statusText);
+      throw new Error(`${res.status} — ${body.slice(0, 200)}`);
+    }
+
+    const data = await res.json();
+    addMessage('shelby', renderMarkdown(data.reply), data.model);
+    history.push({ role: 'assistant', content: data.reply });
+
+  } catch (err) {
+    clearTimeout(slowTimer);
+    removeThinking();
+    addMessage('shelby', `<strong>⚠️ Error</strong><br>${escapeHtml(String(err))}`);
+  } finally {
+    loading = false;
+    setSendEnabled(true);
+    inputEl.focus();
+  }
+}
+
+/* ── Event wiring ───────────────────────────────────────────── */
+inputEl.addEventListener('input', function () {
+  this.style.height = 'auto';
+  this.style.height = Math.min(this.scrollHeight, 130) + 'px';
+});
+
+inputEl.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+
+sendBtn.addEventListener('click', send);
+
+clearBtn.addEventListener('click', () => {
+  history = [];
+  chatArea.innerHTML = '';
+  addMessage('shelby', renderMarkdown(WELCOME));
+});
+
+/* ── Init ───────────────────────────────────────────────────── */
+addMessage('shelby', renderMarkdown(WELCOME));
+inputEl.focus();
+</script>
