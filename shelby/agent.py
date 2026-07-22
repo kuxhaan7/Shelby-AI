@@ -13,6 +13,7 @@ from .memory.notes import NotesStore
 from .rag.store import RagStore
 from .skills.registry import SkillRegistry
 from .tools import TOOL_SCHEMAS, dispatch
+from .usage_tracker import record as record_usage
 
 # Ordered fallback chain: primary first, cheapest/fastest last.
 # Override the primary via SHELBY_MODEL; the rest of the chain is fixed.
@@ -171,8 +172,7 @@ class ShelbyAgent:
             usage.add(response.usage)
 
             if response.stop_reason == "end_turn":
-                usage.log()
-                return _extract_text(response), usage
+                return _extract_text(response), self._finish(usage)
 
             if response.stop_reason == "tool_use":
                 msgs.append({"role": "assistant", "content": response.content})
@@ -194,11 +194,20 @@ class ShelbyAgent:
                 msgs.append({"role": "user", "content": tool_results})
                 continue
 
-            usage.log()
-            return _extract_text(response), usage
+            return _extract_text(response), self._finish(usage)
 
+        return "Max iterations reached.", self._finish(usage)
+
+    def _finish(self, usage: TokenUsage) -> TokenUsage:
         usage.log()
-        return "Max iterations reached.", usage
+        record_usage(
+            model=usage.model,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            cache_read=usage.cache_read_tokens,
+            cache_write=usage.cache_write_tokens,
+        )
+        return usage
 
     def stream(self, messages: list[dict]) -> Generator[str, None, None]:
         """Stream the final response (no tool calls in streaming path for simplicity)."""
