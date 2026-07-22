@@ -40,6 +40,9 @@ SYSTEM_PROMPT = """You are Shelby — a razor-sharp, highly capable AI assistant
 - learn_skill      → write Python code and save it as a reusable skill
 - run_skill        → run a saved skill
 - list_skills      → see all skills you've built up
+- schedule_task    → schedule a skill to run automatically on a cron schedule (e.g. every morning)
+- list_tasks       → see all scheduled cron jobs
+- cancel_task      → cancel a scheduled cron job
 - calculate        → math
 - get_current_time → current UTC time
 
@@ -119,11 +122,13 @@ class ShelbyAgent:
         rag_store: RagStore | None = None,
         notes_store: NotesStore | None = None,
         skill_registry: SkillRegistry | None = None,
+        task_scheduler=None,
     ) -> None:
         self._client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         self._rag = rag_store
         self._notes = notes_store or NotesStore()
         self._skills = skill_registry or SkillRegistry()
+        self._scheduler = task_scheduler
 
     def chat(self, messages: list[dict], max_iterations: int = 6) -> str:
         """Run the full agentic loop and return the final text response."""
@@ -179,6 +184,7 @@ class ShelbyAgent:
                             rag_store=self._rag,
                             notes_store=self._notes,
                             skill_registry=self._skills,
+                            task_scheduler=self._scheduler,
                         )
                         tool_results.append({
                             "type": "tool_result",

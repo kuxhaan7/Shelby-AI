@@ -17,6 +17,7 @@ from ..agent import ShelbyAgent
 from ..memory.notes import NotesStore
 from ..rag.ingest import ingest_text, ingest_workspace
 from ..rag.store import RagStore
+from ..scheduler import TaskScheduler
 from ..skills.registry import SkillRegistry
 from .models import (
     ChatRequest,
@@ -43,15 +44,20 @@ async def lifespan(app: FastAPI):
     global rag_store, agent
 
     rag_store = RagStore()
+    skills = SkillRegistry()
+    scheduler = TaskScheduler(skill_registry=skills)
     agent = ShelbyAgent(
         rag_store=rag_store,
         notes_store=NotesStore(),
-        skill_registry=SkillRegistry(),
+        skill_registry=skills,
+        task_scheduler=scheduler,
     )
 
     workspace = os.getenv("SHELBY_WORKSPACE", "./workspace")
     if os.path.isdir(workspace):
         await run_in_threadpool(ingest_workspace, rag_store, workspace)
+
+    await run_in_threadpool(scheduler.start)
 
     # Start Telegram bot in the same event loop when token is available
     tg_app = None
@@ -68,6 +74,8 @@ async def lifespan(app: FastAPI):
             tg_app = None
 
     yield
+
+    scheduler.shutdown()
 
     if tg_app is not None:
         try:
