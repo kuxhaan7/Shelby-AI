@@ -1,0 +1,44 @@
+{
+  "passed": true,
+  "averages": {
+    "faithfulness": 1.0,
+    "relevance": 1.0,
+    "conciseness": null
+  },
+  "failures": [],
+  "n": 4,
+  "examples": [
+    {
+      "question": "What is Shelby?",
+      "scores": {
+        "faithfulness": 1.0,
+        "relevance": 1.0
+      }
+    },
+    {
+      "question": "How does Shelby remember things across sessions?",
+      "scores": {
+        "faithfulness": 1.0,
+        "relevance": 1.0
+      }
+    },
+    {
+      "question": "What tools can Shelby use?",
+      "scores": {
+        "faithfulness": 1.0,
+        "relevance": 1.0
+      }
+    },
+    {
+      "question": "What API does Shelby expose?",
+      "scores": {
+        "faithfulness": 1.0,
+        "relevance": 1.0
+      }
+    }
+  ],
+  "experiment": "local-judge",
+  "dataset": "shelby-qa",
+  "threshold": 0.7,
+  "timestamp": "2026-07-23T05:56:20+00:00"
+}

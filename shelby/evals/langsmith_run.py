@@ -22,11 +22,19 @@ relevance ≥ 0.7 by default; override with SHELBY_EVAL_PASS_THRESHOLD).
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from .dataset import EVAL_DATASET
+
+# Repo root (…/Shelby-AI): shelby/evals/langsmith_run.py → parents[2].
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+RESULTS_DIR = _REPO_ROOT / "evals_results"
+RESULTS_MD = _REPO_ROOT / "docs" / "EVAL_RESULTS.md"
 from .evaluators import (
     evaluate_answer_relevance,
     evaluate_conciseness,
@@ -116,7 +124,7 @@ def ensure_dataset(client) -> Any:
 
 # ── Runner ───────────────────────────────────────────────────────────────────
 
-def run(repetitions: int = 1) -> dict[str, Any]:
+def run(repetitions: int = 1, save: bool = True) -> dict[str, Any]:
     for var in ("LANGSMITH_API_KEY", "ANTHROPIC_API_KEY"):
         if not os.getenv(var):
             print(f"{var} not set — cannot run LangSmith evals.", file=sys.stderr)
@@ -137,23 +145,29 @@ def run(repetitions: int = 1) -> dict[str, Any]:
         client=client,
     )
 
-    return _summarise(results)
+    experiment = getattr(results, "experiment_name", None)
+    outcome = _summarise(results, experiment=experiment)
+    if save:
+        _save_results(outcome)
+    return outcome
 
 
-def _summarise(results) -> dict[str, Any]:
+def _summarise(results, experiment: str | None = None) -> dict[str, Any]:
     """Aggregate per-metric averages and decide pass/fail against the threshold."""
     rows = list(results)
     scores: dict[str, list[float]] = {"faithfulness": [], "relevance": [], "conciseness": []}
     failures: list[str] = []
+    examples: list[dict[str, Any]] = []
 
     for r in rows:
         ex = r["example"]
         q = ex.inputs.get("question", "?")
-        per: dict[str, float] = {}
+        per: dict[str, Any] = {}
         for res in r["evaluation_results"]["results"]:
             if res.score is not None:
                 scores.setdefault(res.key, []).append(res.score)
                 per[res.key] = res.score
+        examples.append({"question": q, "scores": per})
         # Gate on faithfulness + relevance (conciseness is informational)
         for gate in ("faithfulness", "relevance"):
             if per.get(gate, 0.0) < PASS_THRESHOLD:
@@ -172,12 +186,65 @@ def _summarise(results) -> dict[str, Any]:
         print(f"    ✗ {f}")
     print("=" * 60)
 
-    return {"passed": passed, "averages": avgs, "failures": failures, "n": len(rows)}
+    return {
+        "passed": passed,
+        "averages": avgs,
+        "failures": failures,
+        "n": len(rows),
+        "examples": examples,
+        "experiment": experiment,
+        "dataset": DATASET_NAME,
+        "threshold": PASS_THRESHOLD,
+        "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+
+
+def _save_results(outcome: dict[str, Any]) -> None:
+    """Persist a run to git-tracked files: a JSON record + a Markdown summary."""
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    RESULTS_MD.parent.mkdir(parents=True, exist_ok=True)
+
+    stamp = outcome["timestamp"].replace(":", "").replace("-", "")
+    json_path = RESULTS_DIR / f"{stamp}_{outcome.get('experiment') or 'shelby-qa'}.json"
+    json_path.write_text(json.dumps(outcome, indent=2))
+
+    def _fmt(v: Any) -> str:
+        return f"{v:.2f}" if isinstance(v, (int, float)) else "N/A"
+
+    lines = [
+        "# Shelby — LangChain / LangSmith eval results",
+        "",
+        "_Auto-written by `python -m shelby.evals.langsmith_run`. Latest run at top._",
+        "",
+        f"## {outcome['timestamp']} — {'✅ PASSED' if outcome['passed'] else '❌ FAILED'}",
+        "",
+        f"- Dataset: `{outcome['dataset']}`"
+        + (f" · experiment: `{outcome['experiment']}`" if outcome.get("experiment") else ""),
+        f"- Gate: faithfulness & relevance ≥ {outcome['threshold']}",
+        f"- Averages: "
+        + ", ".join(f"{k} {_fmt(v)}" for k, v in outcome["averages"].items()),
+        "",
+        "| Question | Faithfulness | Relevance | Conciseness |",
+        "|----------|:------------:|:---------:|:-----------:|",
+    ]
+    for ex in outcome["examples"]:
+        s = ex["scores"]
+        lines.append(
+            f"| {ex['question'][:52]} | {_fmt(s.get('faithfulness'))} "
+            f"| {_fmt(s.get('relevance'))} | {_fmt(s.get('conciseness'))} |"
+        )
+    lines.append("")
+    RESULTS_MD.write_text("\n".join(lines))
+
+    print(f"\nSaved results → {json_path.relative_to(_REPO_ROOT)}")
+    print(f"Saved summary → {RESULTS_MD.relative_to(_REPO_ROOT)}")
+    print("Commit them with:  git add evals_results docs/EVAL_RESULTS.md && git commit -m 'chore(evals): record run'")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Shelby evals on LangSmith")
     parser.add_argument("--repetitions", type=int, default=1, help="repeat each example N times (variance)")
+    parser.add_argument("--no-save", action="store_true", help="don't write results to evals_results/ + docs/")
     args = parser.parse_args()
-    outcome = run(repetitions=args.repetitions)
+    outcome = run(repetitions=args.repetitions, save=not args.no_save)
     sys.exit(0 if outcome["passed"] else 1)
