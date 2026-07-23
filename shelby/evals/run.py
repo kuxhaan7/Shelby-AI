@@ -38,14 +38,19 @@ def run_evals(verbose: bool = False) -> list[dict[str, Any]]:
         messages = [
             {
                 "role": "user",
-                "content": f"Context:\n{ctx}\n\nQuestion: {q}",
+                "content": (
+                    "Answer the question using ONLY the information in the context "
+                    "below. Do not add facts, tools, or details not stated there; if "
+                    "the context lists specific items, do not go beyond them.\n\n"
+                    f"Context:\n{ctx}\n\nQuestion: {q}"
+                ),
             }
         ]
         prediction = ag.chat(messages)
         console.print(f"[green]A:[/green] {prediction}")
 
         faith = evaluate_faithfulness(prediction, ctx)
-        rel = evaluate_answer_relevance(q, prediction)
+        rel = evaluate_answer_relevance(q, prediction, ctx)
 
         row = {
             "question": q,

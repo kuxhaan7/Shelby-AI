@@ -24,10 +24,15 @@ _FAITHFULNESS_PROMPT = ChatPromptTemplate.from_messages([
 _RELEVANCE_PROMPT = ChatPromptTemplate.from_messages([
     ("system", "You are an impartial judge. Respond ONLY with valid JSON: " + _SCHEMA),  # noqa: E501
     ("human", (
+        "Context:\n{context}\n\n"
         "Question:\n{question}\n\n"
         "Answer:\n{prediction}\n\n"
-        "Score 1.0 if the answer directly and completely addresses the question, "
-        "0.0 if it is off-topic or incomplete."
+        "Score how well the answer addresses the question GIVEN the context. "
+        "Score 1.0 if it directly and completely answers the question using the "
+        "information available in the context; 0.0 if it is off-topic. "
+        "Judge completeness ONLY against what the context supports — do NOT "
+        "penalise the answer for omitting facts that are not in the context, and "
+        "do NOT second-guess the meaning of terms the context already defines."
     )),
 ])
 
@@ -65,9 +70,14 @@ def evaluate_faithfulness(prediction: str, context: str) -> dict[str, Any]:
     return _run_judge(_FAITHFULNESS_PROMPT, {"context": context, "prediction": prediction})
 
 
-def evaluate_answer_relevance(question: str, prediction: str) -> dict[str, Any]:
-    """Score whether the answer directly addresses the question (0–1)."""
-    return _run_judge(_RELEVANCE_PROMPT, {"question": question, "prediction": prediction})
+def evaluate_answer_relevance(
+    question: str, prediction: str, context: str = ""
+) -> dict[str, Any]:
+    """Score whether the answer addresses the question, given the context (0–1)."""
+    return _run_judge(
+        _RELEVANCE_PROMPT,
+        {"question": question, "prediction": prediction, "context": context},
+    )
 
 
 def evaluate_conciseness(question: str, prediction: str) -> dict[str, Any]:
