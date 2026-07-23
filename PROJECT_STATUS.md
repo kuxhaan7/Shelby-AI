@@ -1,194 +1,137 @@
-# Shelby AI — Project Status, Audit & Journey Log
+# Shelby: Project Status and Engineering Log
 
-_A living record. Updated as the project evolves._
-_Last updated: 2026-07-22_
+A living record of what Shelby is, how it was built, and the problems solved along the way.
 
-Shelby is a production Claude-powered agent built to demonstrate Forward-Deployed
-Engineer (FDE) capabilities: taking a real, messy problem and shipping an
-autonomous agent that solves it end to end. It runs as a single deployed service
-exposing both a **web chat UI** and a **Telegram bot**, backed by tool use, RAG,
-persistent memory, a dynamic skill system, scheduling, and voice.
+Last updated: 2026-07-23.
 
-~2,860 lines of Python across a clean, modular package.
+Shelby is a production AI agent built on the Claude API to demonstrate Forward-Deployed Engineering work: taking a real, messy problem and shipping an agent that solves it end to end. It runs as one deployed service that exposes a web chat interface and a Telegram bot, backed by tool use, retrieval-augmented memory, a data-quality repair loop, scheduling, voice, and MCP connectors. The package is about 4,300 lines of Python.
 
----
+## The story
 
-## 1. The Journey (narrative)
+Shelby did not begin as an AI project. It started as an empty configuration repository: a pile of runtime files and scaffolding with no product inside. The goal was fixed early and never changed, to build a real agent with tool use, RAG, a FastAPI backend, and LangChain evaluations, ready to pitch for an FDE role.
 
-Shelby did not start as an AI project at all. It began as an **empty OpenClaw
-config repository** — a pile of bash runtime files, gateway JSON, and agent
-scaffolding with no real product inside. The goal was set early and never moved:
+It grew in deliberate phases, and each phase had to earn its place by making Shelby more useful on a real task rather than adding features for their own sake.
 
-> _"Make it completely as we claim — tool use, python, rag, fastapi, langchain
-> evals — ready for an FDE role pitch."_
+1. Foundation. Strip the old runtime and build a working Python agent with Claude tool use, a ChromaDB knowledge base, and a FastAPI server.
+2. Proof. Add a LangChain LLM-as-judge evaluation suite and iterate until the scores held.
+3. Reach. Put Shelby on Telegram, then add voice input and output with ElevenLabs, matching the reply format to the input (text for text, voice for voice).
+4. Autonomy. Add live web search, self-writing memory, and a skill system Shelby can extend at runtime.
+5. Reliability. Add a model fallback chain, token and cost tracking, and a scheduler for recurring work.
+6. The real problem. After rejecting a throwaway machine-learning demo, settle on the authentic FDE task: inspect, repair, and score broken enterprise data, proven with a before-and-after quality score.
+7. Showcase. Ship a public web interface so anyone can try Shelby live, and keep this document as the single source of truth.
 
-From there it grew in deliberate phases, each one adding a capability that made
-Shelby less of a chatbot and more of an autonomous engineer:
+## Milestones
 
-1. **Foundation** — strip the OpenClaw runtime, build a real Python agent with
-   Claude tool use, RAG, and a FastAPI server.
-2. **Proof** — wire in LangChain LLM-as-judge evals and loop until Shelby passed.
-3. **Reach** — put Shelby in the user's pocket via Telegram, then give it a
-   voice (ElevenLabs TTS + STT) with strict modality matching.
-4. **Autonomy** — make Shelby better than the framework it replaced: web search,
-   self-writing memory, a dynamic skill system it can extend at runtime.
-5. **Reliability** — model fallback chain, token/cost tracking, a heartbeat loop
-   and cron scheduling so Shelby can act on its own schedule.
-6. **The real problem** — after rejecting a throwaway Kaggle ML demo, we landed
-   on the authentic FDE story: **inspect, fix, and evaluate broken enterprise
-   data** — the actual job, proven with a before/after quality score.
-7. **Showcase** — a public web UI so hiring managers can try Shelby live, plus
-   this audit as the single source of truth.
-
-The throughline: every addition had to earn its place by making Shelby more
-useful to a real person solving a real problem — never features for their own sake.
-
----
-
-## 2. Milestones
-
-| Phase | Milestone | Outcome |
-|-------|-----------|---------|
-| Foundation | Empty OpenClaw repo → real Python agent | 60 runtime files stripped; agent loop live |
-| Foundation | Tool use, RAG, FastAPI shipped | Core stack working end to end |
-| Proof | LangChain evals pass | LLM-as-judge harness green |
+| Area | Milestone | Outcome |
+|------|-----------|---------|
+| Foundation | Empty repo becomes a real Python agent | Old runtime removed, agent loop running |
+| Foundation | Tool use, RAG, and FastAPI shipped | Core stack working end to end |
+| Proof | LangChain evaluations pass | LLM-as-judge harness green |
 | Reach | Deployed to Railway | Public service running |
-| Reach | Telegram bot connected | Talk to Shelby from your phone |
-| Reach | Voice in + out (ElevenLabs) | Modality-matched: text↔text, voice↔voice |
-| Autonomy | Web search (Tavily) | No more "I don't know" |
-| Autonomy | Self-writing memory + dynamic skills | Shelby learns and remembers |
-| Reliability | Model fallback chain | Survives rate limits / outages |
-| Reliability | Token usage + cost tracking | Every call accounted for |
-| Reliability | Heartbeat + cron scheduling | Shelby runs on its own schedule |
-| Flagship | Data-quality FDE loop | **76.0 → 100.0** on broken data |
-| Showcase | Public web chat UI | Hiring managers can demo it live |
-| Showcase | Animated sci-fi emblem + glassmorphism redesign | 2026 AI-UI patterns; custom "sentinel" sigil animation |
-| Showcase | In-UI data-quality scorecard | One-click demo renders animated before/after bars |
-| Showcase | 90s-terminal theme + file & voice inputs | Scientific mono type, neon bg, Motion; upload CSV + speak |
-| Real-world data | Kaggle search + download tools | Key-only setup; Shelby finds & profiles real datasets itself |
-| Self-improvement | Self-critique skill (self_improve) | LLM-as-critic; learns durable lessons, applies them to future answers |
-| File delivery | send_file tool + /download endpoint | Sends files as Telegram documents / web download chips (path-safe) |
-| External services | Remote MCP connector | Shelby uses hosted MCP servers (Apollo, Gmail, Calendar, …) — env-configured, no secrets in repo |
-| External services | Connect-by-URL at runtime | Paste an MCP link in chat; Shelby's connect_mcp tool registers it (persisted), just like adding a connector in Claude |
+| Reach | Telegram bot connected | Usable from a phone |
+| Reach | Voice input and output | Replies match the input format |
+| Autonomy | Web search through Tavily | Answers use live data |
+| Autonomy | Self-writing memory and dynamic skills | Shelby learns and remembers |
+| Reliability | Model fallback chain | Survives rate limits and outages |
+| Reliability | Token and cost tracking | Every call accounted for |
+| Reliability | Heartbeat and cron scheduling | Runs on its own schedule |
+| Flagship | Data-quality repair loop | Quality score 76 to 100 on broken data |
+| Showcase | Public web chat interface | Anyone can try it live |
+| Showcase | In-app data-quality scorecard | One click renders a before-and-after result |
+| Real-world data | Kaggle search and download | Shelby finds and profiles real datasets itself |
+| Self-improvement | Self-critique skill | Learns durable lessons and applies them later |
+| File delivery | File sending to Telegram and web | Delivers generated files safely |
+| External services | MCP connectors | Connects hosted services, by config or by URL at runtime |
+| Evaluation | LangSmith experiment | Faithfulness 1.00, relevance 1.00, conciseness 0.91 |
+| Interface | Minimalist redesign | Clean light and dark themes, mobile responsive |
 
----
+## Engineering problems solved
 
-## 3. Hurdles & How We Solved Them
+The real work was in the debugging. Each of these was hit and fixed.
 
-Real engineering is the debugging. Every one of these was hit and fixed:
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| `langchain.evaluation` not found | LangChain 1.x removed the module | Rewrote the evaluators using LCEL (`prompt \| model \| parser`) |
+| Eval schema read `{score}` as a variable | Single braces are template placeholders | Escaped them to `{{...}}` in the schema string |
+| Chunk-size assertion failed | The final chunk is shorter than a full chunk | Assert the tail is at most the chunk size, not exactly equal |
+| Railway build failed | No Dockerfile or Procfile present | Added a multi-stage Dockerfile |
+| Image grew to 3.1 GB | A heavy dependency pulled in PyTorch | Removed it and used a slim multi-stage build |
+| Telegram dropped voice silently | Telegram needs OGG Opus, not MP3 | Convert with ffmpeg, and include ffmpeg in the runtime image |
+| ElevenLabs returned payment required | The default voice needs a paid plan | Switched to a free-tier voice |
+| Shelby kept asking for API keys | The prompt did not know its own environment | Told the prompt which keys are already configured |
+| The start command broke on Railway | Railway does not expand `$PORT` in the raw command | Wrapped it in a shell so the variable expands |
+| Bundled skills were ignored by git | A broad `data/` ignore rule caught them | Added explicit exceptions for the skills directory |
+| Importing the Kaggle package crashed | It calls `sys.exit(1)` at import with no credentials | Never import it; call the Kaggle CLI through a subprocess |
+| Fabricated results on real files | The data skills silently ran a synthetic demo and narrated fake findings for a real file | Built a real single-table loop, made every skill take the actual file path, and added a rule that forbids passing synthetic output off as real |
+| Evaluations: answers ignored the context | The aggressive prompt made Shelby answer from its own knowledge instead of the provided context | Added a context-grounding rule so a provided context block becomes the single source of truth |
+| Evaluations: relevance judge was context-blind | The judge only saw the question and answer, so it second-guessed correct answers | Made the relevance judge context-aware, scoring completeness only against what the context supports |
 
-| Hurdle | Root cause | Fix |
-|--------|-----------|-----|
-| `langchain.evaluation` ModuleNotFound | LangChain 1.x removed the module | Rewrote evaluators with LCEL (`prompt \| model \| parser`) |
-| Eval schema tried to bind `{score}` | Single braces read as template vars | Escaped to `{{...}}` in the schema string |
-| Chunk-size assertion failed | Tail chunk shorter than full size | Assert `len(tail) <= size`, not `==` |
-| Railway build FAILED (Nixpacks) | No Dockerfile/Procfile | Added Procfile, railway.toml, then full Dockerfile |
-| Image ballooned to 3.1 GB | `headroom-ai[all]` pulled PyTorch/HF; build tools left in image | Multi-stage Dockerfile; dropped the heavy dep |
-| `git add` blocked by .gitignore | `telegram/` and `memory/` rules too broad | Scoped to `/telegram/`, `/memory/` (root-only) |
-| Telegram dropped voice silently | Telegram needs OGG Opus, not MP3 | ffmpeg subprocess MP3→OGG; ffmpeg in runtime image |
-| ElevenLabs 402 payment_required | Default "Rachel" voice needs a paid plan | Switched default to free-tier "Adam" |
-| Shelby asked for API keys | Prompt didn't know its own environment | Added environment-awareness to the system prompt |
-| Shelby felt "dumb" / passive | System prompt too soft | Aggressive rewrite: ban "I don't know", mandate tools |
-| `$PORT` literal in start command | Railway doesn't shell-expand startCommand | Wrapped in `sh -c '... ${PORT:-8000}'` |
-| `data/` gitignored the skills too | Blanket `data/` ignore | Added `!data/skills/` exceptions |
-| Builder ran Railpack, no ffmpeg | railway.toml/nixpacks.toml conflicted; Railway defaulted | Pinned `builder = "DOCKERFILE"`; deleted nixpacks.toml |
-| Deploy stuck "Queued" | **GitHub platform incident** (upstream) | Out of our control — code armed; auto-deploys on GitHub recovery |
-| `import kaggle` risked crashing Shelby | Package calls `sys.exit(1)` at import time with no credentials configured (confirmed by testing) | Never import the package directly — shell out to the `kaggle` CLI via subprocess, which fails safely |
-| **Fabricated results on real files** (dealbreaker) | inspect/fix/evaluate skills were hardwired to the synthetic customers×orders schema and silently ran the demo, narrating fake "orders/$amount" findings for a real Airbnb file | Built `dataquality/generic.py` — a real single-table loop; skills now take `path=` and analyse the actual file, labelling synthetic output "⚠️ NOT a real file"; system prompt enforces passing the real path |
-| Evals: Shelby ignored provided context | The aggressive "never say I don't know / use your tools" prompt made Shelby answer from its own knowledge — e.g. listing its real 20+ tools when the eval context named only four → faithfulness 0.0 | Added a scoped **context-grounding** rule: when a message contains a `Context:` block, treat it as the single source of truth and answer only from it (overrides the expansive rules for that turn) |
-| Evals: relevance judge was context-blind | The relevance evaluator only saw question+answer, so it scored a verbatim-faithful answer 0.3 by second-guessing whether "Shelby" meant a car/place, and docked answers for omitting facts absent from the context | Made `evaluate_answer_relevance` **context-aware** — the judge now scores completeness only against what the context supports |
+## Tech stack
 
-_Note: the co-author commit convention was ruled out as a cause of the queue —
-trailers are parsed after push and never touch builds._
+| Layer | Technology |
+|-------|------------|
+| Model | Claude (Anthropic SDK), with a fallback chain |
+| Agent | Custom tool-use loop with function calling |
+| Retrieval | ChromaDB, persistent, cosine similarity |
+| API | FastAPI and uvicorn, with server-sent event streaming |
+| Validation | Pydantic v2 |
+| Evaluation | LangChain LCEL judges and LangSmith experiments |
+| Deployment | Railway, multi-stage Docker |
+| Chat | python-telegram-bot |
+| Voice | ElevenLabs for speech to text and text to speech, ffmpeg for conversion |
+| Search | Tavily |
+| Memory | JSON key-value store for structured facts |
+| Skills | Dynamic Python skill registry |
+| Scheduling | APScheduler for the heartbeat and cron jobs |
+| Data quality | pandas, in the inspect-repair-score loop |
+| External services | Remote MCP connectors |
+| Web UI | Vanilla HTML, CSS, and JavaScript, light and dark themes |
 
----
-
-## 4. Tech Stack (and when each piece joined)
-
-| Layer | Technology | Added in phase |
-|-------|-----------|----------------|
-| LLM | Claude (Anthropic SDK) — sonnet-5 primary | Foundation |
-| Agent | Custom tool-use loop, function calling | Foundation |
-| RAG | ChromaDB (persistent, cosine HNSW) | Foundation |
-| API | FastAPI + uvicorn, SSE streaming | Foundation |
-| Validation | Pydantic v2 | Foundation |
-| Evals | LangChain 1.x LCEL (LLM-as-judge) | Proof |
-| Deploy | Railway, multi-stage Docker | Reach |
-| Chat | python-telegram-bot v21 | Reach |
-| Voice out | ElevenLabs TTS + ffmpeg (MP3→OGG) | Reach |
-| Voice in | ElevenLabs Scribe STT | Reach |
-| Search | Tavily API | Autonomy |
-| Memory | JSON key-value NotesStore | Autonomy |
-| Skills | Dynamic Python skill registry (importlib) | Autonomy |
-| Reliability | Model fallback chain | Reliability |
-| Observability | Custom token/cost usage tracker | Reliability |
-| Scheduling | APScheduler (heartbeat + cron) | Reliability |
-| Data quality | pandas — inspect/fix/evaluate loop | Flagship |
-| Web UI | Vanilla HTML/CSS/JS, streaming, markdown | Showcase |
-| Web UI | Glassmorphism 2.0, animated SVG emblem, live scorecard | Showcase |
-| Web UI | Terminal theme, Motion (Framer engine), file+voice input | Showcase |
-| Type | Share Tech Mono + Orbitron (90s-terminal scientific) | Showcase |
-| Voice/File | Browser MediaRecorder → /stt; CSV upload → /inspect/upload | Showcase |
-| Real-world data | Kaggle CLI (subprocess-wrapped) — kaggle_search / kaggle_download | Real-world data |
-| Design | 2026 AI-UI research (glass, neon glow, shimmer=processing) | Showcase |
-
----
-
-## 5. Architecture
+## Architecture
 
 ```
 FastAPI service (uvicorn)
-├── Web chat UI          → GET /  (streaming markdown chat)
-├── REST API             → /chat, /chat/stream, /rag/*, /health
-├── Telegram bot         → runs in the same event loop (background task)
-└── Task scheduler       → APScheduler heartbeat + cron jobs
-        │
-        ▼
-   ShelbyAgent  (core agent loop)
-   ├── Model fallback chain: sonnet-5 → sonnet-4-6 → haiku-4-5
-   ├── Tool-use loop (Claude function calling)
-   ├── Token usage tracking (per model, with $ cost)
-   └── Tools ▼
-        ├── web_search (Tavily)         ├── learn_skill / run_skill / list_skills
-        ├── search_knowledge_base (RAG) ├── schedule_task / list_tasks / cancel_task
-        ├── remember (RAG)              ├── write_memory / read_memory
-        └── calculate / get_current_time
+  Web chat UI        GET /
+  REST API           /chat, /chat/stream, /rag/*, /mcp, /health
+  Telegram bot       runs in the same event loop
+  Task scheduler     heartbeat and cron jobs
+
+  ShelbyAgent (core loop)
+    Model fallback chain
+    Tool-use loop (Claude function calling)
+    Token and cost tracking
+    19 tools: web search, knowledge base, memory, skills,
+              scheduling, Kaggle, file delivery, MCP connectors,
+              and the data-quality skills
 ```
 
----
+## Features
 
-## 6. What's built (feature audit)
+| # | Capability | Location |
+|---|-----------|----------|
+| 1 | Tool use, 19 tools through Claude function calling | `shelby/tools.py` |
+| 2 | Retrieval memory with ChromaDB | `shelby/rag/` |
+| 3 | FastAPI server, REST and streaming | `shelby/api/main.py` |
+| 4 | LangChain and LangSmith evaluations | `shelby/evals/` |
+| 5 | Web chat interface | `shelby/api/static/index.html` |
+| 6 | Telegram bot, text and voice | `shelby/telegram/bot.py` |
+| 7 | Voice output with ElevenLabs | `shelby/tts/elevenlabs.py` |
+| 8 | Voice input with ElevenLabs | `shelby/stt/elevenlabs.py` |
+| 9 | Persistent structured memory | `shelby/memory/notes.py` |
+| 10 | Dynamic skills at runtime | `shelby/skills/registry.py` |
+| 11 | Live web search with Tavily | `shelby/tools.py` |
+| 12 | Model fallback on transient errors | `shelby/agent.py` |
+| 13 | Token and cost tracking | `shelby/usage_tracker.py` |
+| 14 | Heartbeat and cron scheduling | `shelby/scheduler.py` |
+| 15 | Data-quality repair loop | `shelby/dataquality/` |
+| 16 | Kaggle search and download | `shelby/integrations/` |
+| 17 | Self-critique that learns from mistakes | `shelby/selfcritique.py` |
+| 18 | Persistent state for volumes | `shelby/paths.py` |
+| 19 | MCP connectors, by config or by URL | `shelby/mcp/` |
 
-| # | Capability | Where | Status |
-|---|-----------|-------|--------|
-| 1 | **Tool use** — 13 tools via Claude function calling | `shelby/tools.py` | ✅ |
-| 2 | **RAG memory** — ChromaDB, cosine HNSW, chunked ingest | `shelby/rag/` | ✅ |
-| 3 | **FastAPI server** — REST + SSE streaming | `shelby/api/main.py` | ✅ |
-| 4 | **LangChain evals** — LLM-as-judge (LCEL) | `shelby/evals/` | ✅ |
-| 5 | **Web chat UI** — dark, streaming, markdown | `shelby/api/static/index.html` | ✅ |
-| 6 | **Telegram bot** — text↔text, voice↔voice | `shelby/telegram/bot.py` | ✅ |
-| 7 | **Voice out (TTS)** — ElevenLabs → OGG via ffmpeg | `shelby/tts/elevenlabs.py` | ✅ |
-| 8 | **Voice in (STT)** — ElevenLabs Scribe | `shelby/stt/elevenlabs.py` | ✅ |
-| 9 | **Self-writing memory** — JSON key-value store | `shelby/memory/notes.py` | ✅ |
-| 10 | **Dynamic skills** — write/run Python skills at runtime | `shelby/skills/registry.py` | ✅ |
-| 11 | **Web search** — real-time via Tavily | `shelby/tools.py` | ✅ |
-| 12 | **Model fallback** — auto-drop on 429/500/503/529 | `shelby/agent.py` | ✅ |
-| 13 | **Token usage tracking** — per-model tokens + est. cost | `shelby/usage_tracker.py` | ✅ |
-| 14 | **Heartbeat + cron** — scheduled skill execution (30-min heartbeat) | `shelby/scheduler.py` | ✅ |
-| 15 | **Data-quality FDE loop** — inspect → fix → evaluate broken data | `shelby/dataquality/` | ✅ |
-| 16 | **Real-world data** — Kaggle search/download + generic single-CSV loop | `shelby/integrations/`, `dataquality/generic.py` | ✅ |
-| 17 | **Self-improvement** — self-critique, learns durable lessons | `shelby/selfcritique.py` | ✅ |
-| 18 | **Persistent state** — all state under SHELBY_DATA_DIR (volume-ready) | `shelby/paths.py` | ✅ |
-| 19 | **External services (MCP)** — connect hosted MCP servers (Apollo, Gmail, Calendar…) via Anthropic's remote connector; add any by URL at runtime (connect_mcp), like Claude's connectors | `shelby/mcp/` | ✅ |
+## Evaluation results
 
----
-
-## 6b. Eval results (LangChain LLM-as-judge)
-
-Shelby's responses are scored by a LangChain LCEL judge (`shelby/evals/`) on
-**faithfulness** (no hallucination beyond the context) and **relevance**
-(answers the question given the context). Run against the 4-example dataset
-with real Claude calls (judge model: `claude-haiku-4-5`):
+Shelby's answers are scored by a LangChain LCEL judge on faithfulness (no claims beyond the context), relevance (answers the question given the context), and conciseness. The suite runs against real Claude calls and is traced as a LangSmith experiment (`shelby-qa-a12b89b9`).
 
 | Question | Faithfulness | Relevance | Conciseness |
 |----------|:------------:|:---------:|:-----------:|
@@ -197,118 +140,79 @@ with real Claude calls (judge model: `claude-haiku-4-5`):
 | What tools can Shelby use? | 1.00 | 1.00 | 1.00 |
 | What API does Shelby expose? | 1.00 | 1.00 | 0.90 |
 
-**All examples pass** (faithfulness & relevance = 1.0; conciseness avg 0.91),
-stable across repeated runs; the 27 structural tests stay green. Verified as a
-real LangSmith experiment (`shelby-qa-a12b89b9`) — raw per-run export and
-summary are committed under `evals_results/` and `docs/EVAL_RESULTS.md`.
-Getting here surfaced and fixed two real bugs — context grounding and a
-context-blind relevance judge (see §3).
+Every example passes the gate (faithfulness and relevance at 1.00, conciseness averaging 0.91), and the results hold across repeated runs. The 27 structural tests stay green. The raw export and a summary are committed under `evals_results/` and `docs/EVAL_RESULTS.md`.
 
-Run it:
+Run it locally:
+
 ```bash
-export ANTHROPIC_API_KEY=...        # judge + agent
-python -m shelby.evals.run          # rich table, local
+export ANTHROPIC_API_KEY=...
+python -m shelby.evals.run
 ```
 
-### LangSmith experiment (traced + scored in the UI)
-`shelby/evals/langsmith_run.py` runs the same suite as a LangSmith **Experiment**:
-it uploads the `shelby-qa` dataset, scores faithfulness/relevance/conciseness,
-and traces every agent + judge call. It enforces a pass gate (faithfulness &
-relevance ≥ 0.7).
+Run it as a LangSmith experiment (needs network access to `api.smith.langchain.com`):
+
 ```bash
 export LANGSMITH_TRACING=true LANGSMITH_API_KEY=... LANGSMITH_PROJECT=Shelby
 export ANTHROPIC_API_KEY=...
-python -m shelby.evals.langsmith_run [--repetitions N]
+python -m shelby.evals.langsmith_run
 ```
-_Note: this must run from an environment whose egress policy allows
-`api.smith.langchain.com`. The web-session sandbox blocks it (403 egress
-denial), so run it locally or from Railway; the code is validated and ready._
 
----
+## The data-quality repair loop
 
-## 7. Flagship capability: the Data-Quality FDE Loop
+This is the strongest demonstration, and the exact job a Palantir FDE does. It takes two broken source exports, a CRM customers file and an ERP orders file that have to join, and runs the full loop.
 
-The strongest demo — the exact job a Palantir FDE does. Takes two broken
-source-system exports (a CRM `customers` file and an ERP `orders` file that must
-join) and drives the full loop:
+1. Inspect. Diagnose seven classes of defect: duplicate rows, nulls, inconsistent date formats, categorical casing and typos, broken referential integrity, messy numeric formatting, and whitespace or casing noise on the join keys.
+2. Repair. Apply the transformations, quarantine unrecoverable orphaned rows for review rather than dropping them, and return a full changelog.
+3. Score. Produce an objective before-and-after quality score across completeness, uniqueness, validity, consistency, integrity, and key hygiene.
 
-1. **Inspect** (`profiler.py`) — diagnoses 7 defect classes: duplicate rows,
-   nulls, inconsistent date formats, categorical casing/typos, broken
-   referential integrity, messy numeric formatting, whitespace/case join-key noise.
-2. **Fix** (`cleaner.py`) — applies Foundry-style transformations, **quarantines**
-   unrecoverable orphaned rows (rather than silently dropping them), and returns a
-   full changelog of every transformation.
-3. **Evaluate** (`evaluate.py`) — objective before/after quality score across 6
-   dimensions: completeness, uniqueness, validity, consistency, integrity, key hygiene.
+The result is a quality score of 76 improving to 100, with 29 unrecoverable rows quarantined. The same three steps are exposed as agent skills, so Shelby can run the whole loop in conversation. Shelby also profiles and repairs arbitrary real single CSV files.
 
-**Result: 76.0 → 100.0** (+24 points), 29 unrecoverable rows quarantined.
-
-Exposed as three agent skills — `inspect_dataset`, `fix_dataset`,
-`evaluate_dataset` — so Shelby drives the whole loop conversationally.
-
-Run the visual demo:
 ```bash
 python -m shelby.dataquality.demo
 ```
 
----
+## Deployment
 
-## 8. Deployment
+Shelby runs on Railway from a pinned multi-stage Dockerfile that includes ffmpeg for voice. The FastAPI service serves the web interface and starts the Telegram bot as a background task in the same process.
 
-- **Platform:** Railway (project `endearing-solace` / `production`)
-- **URL:** https://shelby-ai-production.up.railway.app
-- **Builder:** Dockerfile (pinned) — multi-stage, slim runtime with ffmpeg
-- **Start command:** `uvicorn shelby.api.main:app --host 0.0.0.0 --port $PORT`
-- **Both surfaces in one process:** FastAPI serves the web UI; the Telegram bot
-  starts as a background task inside the FastAPI lifespan.
+All writable state (memory, learned lessons, usage, scheduled tasks, the vector store, and learned skills) lives under `SHELBY_DATA_DIR`. Mounting a Railway volume there keeps it across redeploys, and bundled skills are copied onto an empty volume on first boot. Without a volume, state lasts for the life of the container.
 
-### Environment variables (set in Railway, never committed)
-| Var | Purpose |
-|-----|---------|
+Secrets are set as Railway environment variables and never committed:
+
+| Variable | Purpose |
+|----------|---------|
 | `ANTHROPIC_API_KEY` | Claude API |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot |
-| `ELEVENLABS_API_KEY` | TTS + STT |
+| `ELEVENLABS_API_KEY` | Voice input and output |
 | `TAVILY_API_KEY` | Web search |
-| `KAGGLE_API_TOKEN` | Kaggle dataset search/download (optional) |
-| `SHELBY_DATA_DIR` | Base dir for all persistent state — set to the volume mount (e.g. `/data`) |
-| `SHELBY_MCP_SERVERS` / `SHELBY_MCP_<NAME>_URL` + `_TOKEN` | Connect hosted MCP servers (Apollo, Gmail, Calendar…). See `docs/MCP_SETUP.md`. All optional — connector is inactive if unset |
+| `KAGGLE_API_TOKEN` | Kaggle search and download (optional) |
+| `SHELBY_DATA_DIR` | Base directory for persistent state, set to the volume mount |
+| `LANGSMITH_*` | LangSmith tracing and experiments (optional) |
+| `SHELBY_MCP_*` | Connect hosted MCP servers (optional). See `docs/MCP_SETUP.md` |
 
-### Persistence (Railway volume)
-All writable state (memory, learned lessons, usage, scheduled tasks, RAG,
-learned skills) lives under `SHELBY_DATA_DIR`. To make it survive redeploys:
-1. Railway → service → **Volumes** → add a volume, mount path `/data`.
-2. Railway → **Variables** → set `SHELBY_DATA_DIR=/data`.
-Bundled skills are auto-seeded onto the empty volume on first boot, so nothing
-is lost. Without a volume, state persists only for the life of the container.
-
----
-
-## 9. Repo layout
+## Repository layout
 
 ```
 shelby/
-├── agent.py            core agent loop, model fallback, system prompt
-├── tools.py            13 tools + dispatcher
-├── scheduler.py        APScheduler heartbeat + cron jobs
-├── usage_tracker.py    token/cost accounting
-├── api/                FastAPI: main.py, models.py, static/index.html
-├── dataquality/        FDE loop: generate_broken, profiler, cleaner, evaluate, demo
-├── rag/                ChromaDB store + ingest
-├── memory/             JSON key-value NotesStore
-├── skills/             dynamic skill registry
-├── mcp/                remote MCP connector (hosted external services)
-├── telegram/           bot (text/voice)
-├── tts/ · stt/         ElevenLabs voice
-└── evals/              LangChain LLM-as-judge
-data/skills/            bundled skills (usage stats, data-quality loop)
-tests/                  tool, RAG, eval-structure tests
+  agent.py         core agent loop, model fallback, system prompt
+  tools.py         19 tools and the dispatcher
+  scheduler.py     heartbeat and cron jobs
+  usage_tracker.py token and cost accounting
+  api/             FastAPI: main.py, models.py, static/index.html
+  dataquality/     inspect, repair, and score loop
+  rag/             ChromaDB store and ingestion
+  memory/          structured key-value store
+  skills/          dynamic skill registry
+  mcp/             remote MCP connectors
+  telegram/        the Telegram bot
+  tts/ stt/        ElevenLabs voice
+  evals/           LangChain and LangSmith evaluations
+data/skills/       bundled skills
+evals_results/     saved evaluation runs
+tests/             tool, RAG, and eval tests
 ```
 
----
+## Follow-ups
 
-## 10. Known follow-ups
-
-- Confirm the deployed image is built from the **Dockerfile** (now pinned) so
-  ffmpeg is present and voice works.
-- Rotate any API keys/tokens that were ever shared in plaintext.
-- Optional: expose the data-quality scorecard as a visual panel in the web UI.
+- Add the LangSmith evaluation screenshot to the README.
+- Rotate any API keys or tokens that were shared in plaintext during development.
