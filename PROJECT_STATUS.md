@@ -171,6 +171,9 @@ FastAPI service (uvicorn)
 | 13 | **Token usage tracking** — per-model tokens + est. cost | `shelby/usage_tracker.py` | ✅ |
 | 14 | **Heartbeat + cron** — scheduled skill execution (30-min heartbeat) | `shelby/scheduler.py` | ✅ |
 | 15 | **Data-quality FDE loop** — inspect → fix → evaluate broken data | `shelby/dataquality/` | ✅ |
+| 16 | **Real-world data** — Kaggle search/download + generic single-CSV loop | `shelby/integrations/`, `dataquality/generic.py` | ✅ |
+| 17 | **Self-improvement** — self-critique, learns durable lessons | `shelby/selfcritique.py` | ✅ |
+| 18 | **Persistent state** — all state under SHELBY_DATA_DIR (volume-ready) | `shelby/paths.py` | ✅ |
 
 ---
 
@@ -217,6 +220,16 @@ python -m shelby.dataquality.demo
 | `TELEGRAM_BOT_TOKEN` | Telegram bot |
 | `ELEVENLABS_API_KEY` | TTS + STT |
 | `TAVILY_API_KEY` | Web search |
+| `KAGGLE_API_TOKEN` | Kaggle dataset search/download (optional) |
+| `SHELBY_DATA_DIR` | Base dir for all persistent state — set to the volume mount (e.g. `/data`) |
+
+### Persistence (Railway volume)
+All writable state (memory, learned lessons, usage, scheduled tasks, RAG,
+learned skills) lives under `SHELBY_DATA_DIR`. To make it survive redeploys:
+1. Railway → service → **Volumes** → add a volume, mount path `/data`.
+2. Railway → **Variables** → set `SHELBY_DATA_DIR=/data`.
+Bundled skills are auto-seeded onto the empty volume on first boot, so nothing
+is lost. Without a volume, state persists only for the life of the container.
 
 ---
 
