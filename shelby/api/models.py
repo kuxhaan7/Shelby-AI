@@ -25,6 +25,13 @@ class ChatResponse(BaseModel):
     files: list[FileRef] = []
 
 
+class McpConnectRequest(BaseModel):
+    name: str
+    url: str
+    token: str | None = None
+    allowed_tools: list[str] | None = None
+
+
 class IngestRequest(BaseModel):
     text: str
     source: str = "api"

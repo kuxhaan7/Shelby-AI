@@ -244,6 +244,46 @@ TOOL_SCHEMAS = [
             "required": ["path"],
         },
     },
+    {
+        "name": "connect_mcp",
+        "description": (
+            "Connect a new external service to yourself by its MCP server URL — the same "
+            "way a user adds a connector in Claude. Once connected, that server's tools become "
+            "available to you on the next turn. Use this whenever the user gives you an MCP "
+            "link (e.g. 'connect https://mcp.notion.com/mcp') or asks to hook up a service. "
+            "The connection persists across restarts."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Short identifier for the service, e.g. 'notion', 'linear', 'apollo'."},
+                "url": {"type": "string", "description": "The remote MCP endpoint URL (must start with http:// or https://)."},
+                "token": {"type": "string", "description": "Optional bearer/access token for authenticated servers. Omit for no-auth servers."},
+                "allowed_tools": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional list restricting which of the server's tools to expose. Omit to allow all.",
+                },
+            },
+            "required": ["name", "url"],
+        },
+    },
+    {
+        "name": "list_mcp",
+        "description": "List the external MCP services currently connected to Shelby (names, URLs, whether authenticated). Tokens are never shown.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "disconnect_mcp",
+        "description": "Disconnect a previously connected MCP service by name (only servers added at runtime, not ones set via the environment).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Name of the connected service to remove."},
+            },
+            "required": ["name"],
+        },
+    },
 ]
 
 
@@ -439,6 +479,43 @@ def kaggle_download(args: dict) -> str:
     return "\n".join(lines)
 
 
+def connect_mcp(args: dict) -> str:
+    from .mcp import add_server
+    result = add_server(
+        name=args.get("name", ""),
+        url=args.get("url", ""),
+        token=args.get("token"),
+        allowed_tools=args.get("allowed_tools"),
+    )
+    if not result.get("ok"):
+        return f"Could not connect: {result.get('error')}"
+    return (
+        f"✅ Connected '{result['name']}'. Its tools are now available to me — "
+        f"I'll use them from my next reply. (This connection persists across restarts.)"
+    )
+
+
+def list_mcp(_: dict) -> str:
+    from .mcp import list_servers
+    servers = list_servers()
+    if not servers:
+        return "No external MCP services are connected yet. Give me an MCP URL to connect one."
+    lines = []
+    for s in servers:
+        auth = "authenticated" if s["authenticated"] else "no-auth"
+        scope = f", tools: {', '.join(s['allowed_tools'])}" if s.get("allowed_tools") else ""
+        lines.append(f"• {s['name']} — {s['url']} ({auth}, {s['source']}{scope})")
+    return "\n".join(lines)
+
+
+def disconnect_mcp(args: dict) -> str:
+    from .mcp import remove_server
+    result = remove_server(args.get("name", ""))
+    if not result.get("ok"):
+        return result.get("error", "Could not disconnect.")
+    return f"Disconnected '{result['name']}'. Its tools are no longer available."
+
+
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
 def dispatch(
@@ -483,5 +560,11 @@ def dispatch(
             return kaggle_download(tool_input)
         case "send_file":
             return send_file(tool_input, outbox)
+        case "connect_mcp":
+            return connect_mcp(tool_input)
+        case "list_mcp":
+            return list_mcp(tool_input)
+        case "disconnect_mcp":
+            return disconnect_mcp(tool_input)
         case _:
             return f"Unknown tool: {tool_name}"

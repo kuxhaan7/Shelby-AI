@@ -25,6 +25,7 @@ from .models import (
     FileRef,
     IngestRequest,
     IngestResponse,
+    McpConnectRequest,
     SearchRequest,
     SearchResponse,
     SearchResult,
@@ -108,10 +109,41 @@ async def index():
 
 @app.get("/health")
 async def health():
-    from ..mcp.connector import _entries
+    from ..mcp import list_servers
     docs = rag_store.count() if rag_store else 0
-    mcp = [{"name": e["name"], "authenticated": bool(e.get("token"))} for e in _entries()]
+    mcp = [{"name": s["name"], "authenticated": s["authenticated"]} for s in list_servers()]
     return {"status": "ok", "rag_docs": docs, "mcp_servers": mcp}
+
+
+# ── MCP connectors (add any external service by URL, like Claude) ─────────────
+
+@app.get("/mcp")
+async def mcp_list():
+    """List connected MCP services (tokens never returned)."""
+    from ..mcp import list_servers
+    return {"servers": list_servers()}
+
+
+@app.post("/mcp")
+async def mcp_connect(req: McpConnectRequest):
+    """Connect a new MCP service by URL. Persists across restarts."""
+    from ..mcp import add_server
+    result = add_server(
+        name=req.name, url=req.url, token=req.token, allowed_tools=req.allowed_tools,
+    )
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("error", "Could not connect."))
+    return {"ok": True, "name": result["name"]}
+
+
+@app.delete("/mcp/{name}")
+async def mcp_disconnect(name: str):
+    """Disconnect a runtime-registered MCP service by name."""
+    from ..mcp import remove_server
+    result = remove_server(name)
+    if not result.get("ok"):
+        raise HTTPException(404, result.get("error", "Not found."))
+    return {"ok": True, "name": result["name"]}
 
 
 # ── Data-quality demo (flagship FDE loop) ────────────────────────────────────

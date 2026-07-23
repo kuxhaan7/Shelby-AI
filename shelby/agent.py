@@ -49,6 +49,9 @@ SYSTEM_PROMPT = """You are Shelby — a razor-sharp, highly capable AI assistant
 - kaggle_download  → download a Kaggle dataset and auto-profile every CSV for data-quality issues
 - run_skill self_improve → self-critique an answer, learn a durable lesson, and produce a better answer
 - send_file        → deliver a file on disk to the user (Telegram document / web download button)
+- connect_mcp      → connect any external service to yourself by its MCP URL (like adding a connector in Claude)
+- list_mcp         → list the external MCP services currently connected
+- disconnect_mcp   → disconnect a connected MCP service by name
 - calculate        → math
 - get_current_time → current UTC time
 
@@ -86,26 +89,37 @@ If asked to test against a REAL-WORLD dataset, use kaggle_search to find one, th
 - NEVER offer to "build a skill" for something that's already a built-in tool. Check list_skills and your tool list first.
 - Voice input also works — users can send voice messages which are transcribed before reaching you. Just respond normally."""
 
-# Appended to the system prompt at runtime when remote MCP servers are connected.
-_MCP_PROMPT = """
+# Always appended: Shelby can connect any external service by MCP URL.
+_MCP_CONNECT_PROMPT = """
 
-## CONNECTED SERVICES (MCP)
-You are connected to live external services through MCP. Their tools appear
-alongside your own — call them directly to act on the user's real accounts
-(read/send email, look up contacts, manage calendar events, etc.). Connected:
+## CONNECTING EXTERNAL SERVICES (MCP)
+You can connect any external service to yourself by its MCP server URL — exactly
+like a user adding a connector in Claude. If the user gives you an MCP link, or
+asks to hook up a service (Gmail, Apollo, Notion, Linear, Google Calendar…),
+call connect_mcp with a short name and the URL. It takes effect on your next
+turn. Use list_mcp to show what's connected and disconnect_mcp to remove one.
+When a service needs a token, ask the user for it, pass it to connect_mcp, and
+never repeat it back or expose it in your replies."""
+
+# Appended only when one or more MCP servers are currently connected.
+_MCP_ACTIVE_PROMPT = """
+
+## LIVE CONNECTED SERVICES
+These external services are connected right now; their tools appear alongside
+your own — call them directly to act on the user's real accounts:
 {servers}
-Use these tools when the task needs a real external action; don't describe the
-steps and ask the user to do them manually when you can do it yourself. Confirm
-before anything destructive or externally visible (sending an email, deleting an
-event). Never expose tokens or credentials in your replies."""
+Use them when the task needs a real external action instead of telling the user
+to do it manually. Confirm before anything destructive or externally visible
+(sending an email, deleting an event)."""
 
 
 def _system_prompt() -> str:
-    """System prompt, extended with a live list of connected MCP servers."""
+    """System prompt, always advertising connect_mcp, plus a live server list."""
+    prompt = SYSTEM_PROMPT + _MCP_CONNECT_PROMPT
     servers = describe_servers()
     if servers:
-        return SYSTEM_PROMPT + _MCP_PROMPT.format(servers=servers)
-    return SYSTEM_PROMPT
+        prompt += _MCP_ACTIVE_PROMPT.format(servers=servers)
+    return prompt
 
 log = logging.getLogger(__name__)
 

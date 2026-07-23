@@ -56,6 +56,11 @@ def kaggle_dir() -> Path:
     return _p("SHELBY_KAGGLE_DIR", "kaggle_downloads")
 
 
+def mcp_file() -> Path:
+    """Registry of MCP servers connected at runtime (via the connect_mcp tool)."""
+    return _p("SHELBY_MCP_FILE", "mcp_servers.json")
+
+
 def outbox_dir() -> Path:
     """Where generated files (e.g. cleaned CSVs) are written for delivery."""
     d = _p("SHELBY_OUTBOX_DIR", "outbox")

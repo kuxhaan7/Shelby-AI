@@ -69,6 +69,7 @@ useful to a real person solving a real problem — never features for their own 
 | Self-improvement | Self-critique skill (self_improve) | LLM-as-critic; learns durable lessons, applies them to future answers |
 | File delivery | send_file tool + /download endpoint | Sends files as Telegram documents / web download chips (path-safe) |
 | External services | Remote MCP connector | Shelby uses hosted MCP servers (Apollo, Gmail, Calendar, …) — env-configured, no secrets in repo |
+| External services | Connect-by-URL at runtime | Paste an MCP link in chat; Shelby's connect_mcp tool registers it (persisted), just like adding a connector in Claude |
 
 ---
 
@@ -176,7 +177,7 @@ FastAPI service (uvicorn)
 | 16 | **Real-world data** — Kaggle search/download + generic single-CSV loop | `shelby/integrations/`, `dataquality/generic.py` | ✅ |
 | 17 | **Self-improvement** — self-critique, learns durable lessons | `shelby/selfcritique.py` | ✅ |
 | 18 | **Persistent state** — all state under SHELBY_DATA_DIR (volume-ready) | `shelby/paths.py` | ✅ |
-| 19 | **External services (MCP)** — connect hosted MCP servers (Apollo, Gmail, Calendar…) via Anthropic's remote connector, env-configured | `shelby/mcp/` | ✅ |
+| 19 | **External services (MCP)** — connect hosted MCP servers (Apollo, Gmail, Calendar…) via Anthropic's remote connector; add any by URL at runtime (connect_mcp), like Claude's connectors | `shelby/mcp/` | ✅ |
 
 ---
 

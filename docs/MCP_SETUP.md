@@ -9,6 +9,31 @@ environment variables, **which servers to attach and a token for each**.
 No URLs or tokens are stored in the repo. If nothing is configured, the
 connector stays inactive and Shelby behaves exactly as before.
 
+## The fastest way: just give Shelby the link
+
+You don't have to touch env vars at all. Paste an MCP URL into the chat — exactly
+like adding a connector in Claude:
+
+> **You:** connect https://mcp.notion.com/mcp — here's my token: ntn_xxx
+> **Shelby:** ✅ Connected 'notion'. Its tools are now available…
+
+Shelby calls its `connect_mcp` tool, stores the server in a registry under
+`SHELBY_DATA_DIR` (so it survives redeploys **if** you've mounted a volume), and
+starts using that server's tools on its next reply. Ask it to `list_mcp` to see
+what's connected, or "disconnect notion" to remove one.
+
+The env-var methods below are for servers you want **baked into the deployment**
+(always present, managed by infra). Runtime-connected servers can't override an
+env-defined one of the same name.
+
+You can also drive the same registry over HTTP:
+
+```
+GET    /mcp                      # list connected servers (no tokens)
+POST   /mcp  {name,url,token?}   # connect one
+DELETE /mcp/{name}               # disconnect one
+```
+
 ## What "remote MCP server" means here
 
 The connector attaches servers that expose a public MCP endpoint over HTTP

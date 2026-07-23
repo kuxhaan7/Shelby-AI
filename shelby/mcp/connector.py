@@ -37,6 +37,14 @@ ever committed to the repo. Two ways to declare servers:
 
    e.g. SHELBY_MCP_APOLLO_URL + SHELBY_MCP_APOLLO_TOKEN registers "apollo".
 
+3. At runtime, by URL — exactly like Claude's "add a connector" flow. Shelby's
+   `connect_mcp` tool (or the /mcp API) registers a server on the fly:
+
+     connect_mcp(name="notion", url="https://mcp.notion.com/mcp", token="…")
+
+   Runtime servers are persisted to a JSON registry under SHELBY_DATA_DIR (the
+   volume), so they survive redeploys. They can be listed and removed too.
+
 If nothing is configured, the connector is simply inactive and Shelby behaves
 exactly as before.
 """
@@ -126,14 +134,104 @@ def _from_convenience_env() -> list[dict]:
     return out
 
 
-def _entries() -> list[dict]:
-    """All configured MCP servers, JSON first then convenience vars.
+# ── Runtime registry (servers added by URL during a conversation) ────────────
 
-    De-duplicated by name (JSON definitions win over convenience vars).
+def _load_runtime() -> list[dict]:
+    """Load MCP servers registered at runtime from the persistent JSON file."""
+    from ..paths import mcp_file
+    path = mcp_file()
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        log.error("Could not read MCP registry %s (%s) — ignoring it.", path, exc)
+        return []
+    if not isinstance(data, list):
+        return []
+    out: list[dict] = []
+    for item in data:
+        if isinstance(item, dict) and item.get("name") and item.get("url"):
+            out.append({
+                "name": str(item["name"]),
+                "url": str(item["url"]),
+                "token": item.get("token") or None,
+                "allowed_tools": item.get("allowed_tools"),
+            })
+    return out
+
+
+def _save_runtime(entries: list[dict]) -> None:
+    from ..paths import mcp_file
+    path = mcp_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(entries, indent=2))
+
+
+def _norm_name(name: str) -> str:
+    return "".join(c if c.isalnum() or c in "-_" else "_" for c in name.strip().lower())
+
+
+def add_server(
+    name: str, url: str, token: str | None = None,
+    allowed_tools: list[str] | None = None,
+) -> dict:
+    """Register (or update) an MCP server by URL at runtime. Persisted to disk.
+
+    Returns {"ok": True, "name": ...} or {"ok": False, "error": ...}.
     """
+    name = _norm_name(name or "")
+    url = (url or "").strip()
+    if not name:
+        return {"ok": False, "error": "A server name is required."}
+    if not (url.startswith("http://") or url.startswith("https://")):
+        return {"ok": False, "error": "URL must be a full http(s):// MCP endpoint."}
+    if name in {e["name"] for e in _env_entries()}:
+        return {"ok": False, "error": f"'{name}' is defined in the environment and can't be overridden at runtime."}
+
+    entries = _load_runtime()
+    entries = [e for e in entries if e["name"] != name]  # upsert
+    entries.append({
+        "name": name, "url": url,
+        "token": (token or "").strip() or None,
+        "allowed_tools": allowed_tools or None,
+    })
+    _save_runtime(entries)
+    return {"ok": True, "name": name}
+
+
+def remove_server(name: str) -> dict:
+    """Remove a runtime-registered MCP server by name."""
+    name = _norm_name(name or "")
+    entries = _load_runtime()
+    kept = [e for e in entries if e["name"] != name]
+    if len(kept) == len(entries):
+        if name in {e["name"] for e in _env_entries()}:
+            return {"ok": False, "error": f"'{name}' is set via the environment — remove it there, not at runtime."}
+        return {"ok": False, "error": f"No runtime server named '{name}'."}
+    _save_runtime(kept)
+    return {"ok": True, "name": name}
+
+
+def _env_entries() -> list[dict]:
+    """Servers declared through environment variables (JSON + convenience)."""
     entries = _from_json_env()
     seen = {e["name"] for e in entries}
     for e in _from_convenience_env():
+        if e["name"] not in seen:
+            entries.append(e)
+            seen.add(e["name"])
+    return entries
+
+
+def _entries() -> list[dict]:
+    """All MCP servers: environment-defined first, then runtime-registered.
+
+    De-duplicated by name; environment definitions take precedence.
+    """
+    entries = _env_entries()
+    seen = {e["name"] for e in entries}
+    for e in _load_runtime():
         if e["name"] not in seen:
             entries.append(e)
             seen.add(e["name"])
@@ -155,6 +253,21 @@ def mcp_servers() -> list[dict]:
             server["tool_configuration"] = {"enabled": True, "allowed_tools": allowed}
         payload.append(server)
     return payload
+
+
+def list_servers() -> list[dict]:
+    """Structured view of every connected server (tokens redacted)."""
+    env_names = {e["name"] for e in _env_entries()}
+    out = []
+    for e in _entries():
+        out.append({
+            "name": e["name"],
+            "url": e["url"],
+            "authenticated": bool(e.get("token")),
+            "allowed_tools": e.get("allowed_tools"),
+            "source": "environment" if e["name"] in env_names else "runtime",
+        })
+    return out
 
 
 def describe_servers() -> str:
