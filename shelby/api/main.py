@@ -173,79 +173,8 @@ async def inspect_upload(file: UploadFile = File(...)):
     if not raw:
         raise HTTPException(400, "Empty file")
 
-    def _profile(raw_bytes: bytes, name: str) -> dict:
-        import gzip
-        import io
-        import re
-
-        import pandas as pd
-
-        # Transparently handle gzip — Inside Airbnb and many real government
-        # exports ship as .csv.gz, and browsers won't auto-decompress on upload.
-        if raw_bytes[:2] == b"\x1f\x8b":
-            try:
-                raw_bytes = gzip.decompress(raw_bytes)
-            except Exception as exc:
-                return {"error": f"Could not decompress .gz file: {exc}"}
-
-        MAX_ROWS = 300_000  # keep large real-world exports (e.g. reviews.csv) fast + memory-safe
-        try:
-            df_iter = pd.read_csv(io.BytesIO(raw_bytes), dtype=str, keep_default_na=True,
-                                   chunksize=MAX_ROWS)
-            df = next(df_iter)
-            truncated = False
-            try:
-                next(df_iter)
-                truncated = True
-            except StopIteration:
-                pass
-        except Exception as exc:
-            return {"error": f"Could not parse CSV: {exc}"}
-
-        n = len(df)
-        cols = list(df.columns)
-        dupes = int(df.duplicated().sum())
-        nulls = {c: int(df[c].isna().sum() + (df[c] == "").sum()) for c in cols}
-        total_cells = n * len(cols) if cols else 0
-        total_nulls = sum(nulls.values())
-
-        # Format-level defects: currency strings, percent strings — the exact
-        # issues real exports like Inside Airbnb's price/host_response_rate ship with.
-        currency_re = re.compile(r"^\s*\$[\d,]+\.?\d*\s*$")
-        percent_re = re.compile(r"^\s*\d+(\.\d+)?%\s*$")
-        format_issues = []
-        for col in cols:
-            sample = df[col].dropna().astype(str).head(500)
-            if sample.empty:
-                continue
-            if (sample.str.match(currency_re)).mean() > 0.5:
-                format_issues.append(f"'{col}' stores currency as text (e.g. \"{sample.iloc[0]}\") — needs numeric coercion")
-            elif (sample.str.match(percent_re)).mean() > 0.5:
-                format_issues.append(f"'{col}' stores percentages as text (e.g. \"{sample.iloc[0]}\") — needs numeric coercion")
-
-        completeness = round(100 * (1 - total_nulls / total_cells), 1) if total_cells else 100.0
-        uniqueness = round(100 * (1 - dupes / n), 1) if n else 100.0
-        overall = round((completeness + uniqueness) / 2, 1)
-
-        issues = list(format_issues)
-        if dupes:
-            issues.append(f"{dupes} duplicate rows")
-        for col, cnt in sorted(nulls.items(), key=lambda x: -x[1])[:5]:
-            if cnt:
-                issues.append(f"{cnt} missing values in '{col}'")
-
-        return {
-            "filename": name,
-            "rows": n,
-            "truncated": truncated,
-            "columns": cols,
-            "duplicate_rows": dupes,
-            "missing_cells": total_nulls,
-            "scores": {"completeness": completeness, "uniqueness": uniqueness, "overall": overall},
-            "issues": issues[:8],
-        }
-
-    return await run_in_threadpool(_profile, raw, file.filename or "upload.csv")
+    from ..dataquality.quickprofile import quick_profile_bytes
+    return await run_in_threadpool(quick_profile_bytes, raw, file.filename or "upload.csv")
 
 
 # ── Chat ─────────────────────────────────────────────────────────────────────

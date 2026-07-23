@@ -6,6 +6,7 @@ import json
 import math
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 # ── Tool schemas ─────────────────────────────────────────────────────────────
@@ -194,6 +195,39 @@ TOOL_SCHEMAS = [
             "required": ["name"],
         },
     },
+    {
+        "name": "kaggle_search",
+        "description": (
+            "Search Kaggle for real public datasets by keyword. Use this when asked to find, "
+            "test against, or benchmark on real-world data. Requires the KAGGLE_API_TOKEN "
+            "environment variable to be configured — if it returns a setup error, tell the "
+            "user how to get a token (kaggle.com/settings/api) and set it in the environment."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search keywords, e.g. 'airbnb new york' or 'hospital readmission'."},
+                "max_results": {"type": "integer", "description": "Max results to return (default 8).", "default": 8},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "kaggle_download",
+        "description": (
+            "Download a Kaggle dataset by its ref (owner/dataset-name, from kaggle_search "
+            "results) and automatically profile every CSV file found for data-quality issues "
+            "(nulls, duplicates, currency/percent stored as text). Requires KAGGLE_API_TOKEN."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "dataset_ref": {"type": "string", "description": "Dataset ref, e.g. 'dgomonov/new-york-city-airbnb-open-data'."},
+                "file_name": {"type": "string", "description": "Optional: download only this one file instead of the whole dataset."},
+            },
+            "required": ["dataset_ref"],
+        },
+    },
 ]
 
 
@@ -320,6 +354,49 @@ def cancel_task(args: dict, task_scheduler=None) -> str:
     return task_scheduler.cancel(args["name"])
 
 
+def kaggle_search(args: dict) -> str:
+    from .integrations.kaggle_client import search
+    result = search(args["query"], int(args.get("max_results", 8)))
+    if "error" in result:
+        return result["error"]
+    if not result["results"]:
+        return f"No Kaggle datasets found for '{args['query']}'."
+    lines = []
+    for d in result["results"]:
+        ref = d.get("ref") or d.get("datasetSlugNullable") or d.get("id") or "?"
+        title = d.get("title") or d.get("titleNullable") or ref
+        size = d.get("size") or d.get("totalBytesNullable") or "?"
+        lines.append(f"• {ref} — {title} ({size})")
+    return "\n".join(lines)
+
+
+def kaggle_download(args: dict) -> str:
+    from .dataquality.quickprofile import quick_profile_bytes
+    from .integrations.kaggle_client import download
+
+    result = download(args["dataset_ref"], args.get("file_name"))
+    if "error" in result:
+        return result["error"]
+
+    lines = [f"Downloaded '{result['dataset']}' → {result['path']}", "Files:"]
+    for f in result["files"]:
+        lines.append(f"  {f}")
+        if f.lower().endswith((".csv", ".csv.gz")):
+            try:
+                raw = Path(f).read_bytes()
+                profile = quick_profile_bytes(raw, Path(f).name)
+                if "error" not in profile:
+                    lines.append(
+                        f"    -> {profile['rows']:,} rows, {len(profile['columns'])} cols, "
+                        f"quality score {profile['scores']['overall']}/100"
+                    )
+                    for issue in profile["issues"][:3]:
+                        lines.append(f"    x {issue}")
+            except Exception:
+                pass
+    return "\n".join(lines)
+
+
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
 def dispatch(
@@ -357,5 +434,9 @@ def dispatch(
             return list_tasks(tool_input, task_scheduler)
         case "cancel_task":
             return cancel_task(tool_input, task_scheduler)
+        case "kaggle_search":
+            return kaggle_search(tool_input)
+        case "kaggle_download":
+            return kaggle_download(tool_input)
         case _:
             return f"Unknown tool: {tool_name}"
