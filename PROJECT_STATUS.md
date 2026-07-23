@@ -90,6 +90,7 @@ Real engineering is the debugging. Every one of these was hit and fixed:
 | Builder ran Railpack, no ffmpeg | railway.toml/nixpacks.toml conflicted; Railway defaulted | Pinned `builder = "DOCKERFILE"`; deleted nixpacks.toml |
 | Deploy stuck "Queued" | **GitHub platform incident** (upstream) | Out of our control — code armed; auto-deploys on GitHub recovery |
 | `import kaggle` risked crashing Shelby | Package calls `sys.exit(1)` at import time with no credentials configured (confirmed by testing) | Never import the package directly — shell out to the `kaggle` CLI via subprocess, which fails safely |
+| **Fabricated results on real files** (dealbreaker) | inspect/fix/evaluate skills were hardwired to the synthetic customers×orders schema and silently ran the demo, narrating fake "orders/$amount" findings for a real Airbnb file | Built `dataquality/generic.py` — a real single-table loop; skills now take `path=` and analyse the actual file, labelling synthetic output "⚠️ NOT a real file"; system prompt enforces passing the real path |
 
 _Note: the co-author commit convention was ruled out as a cause of the queue —
 trailers are parsed after push and never touch builds._
