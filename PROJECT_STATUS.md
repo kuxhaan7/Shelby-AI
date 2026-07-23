@@ -64,6 +64,7 @@ useful to a real person solving a real problem — never features for their own 
 | Showcase | Public web chat UI | Hiring managers can demo it live |
 | Showcase | Animated sci-fi emblem + glassmorphism redesign | 2026 AI-UI patterns; custom "sentinel" sigil animation |
 | Showcase | In-UI data-quality scorecard | One-click demo renders animated before/after bars |
+| Showcase | 90s-terminal theme + file & voice inputs | Scientific mono type, neon bg, Motion; upload CSV + speak |
 
 ---
 
@@ -116,6 +117,9 @@ trailers are parsed after push and never touch builds._
 | Data quality | pandas — inspect/fix/evaluate loop | Flagship |
 | Web UI | Vanilla HTML/CSS/JS, streaming, markdown | Showcase |
 | Web UI | Glassmorphism 2.0, animated SVG emblem, live scorecard | Showcase |
+| Web UI | Terminal theme, Motion (Framer engine), file+voice input | Showcase |
+| Type | Share Tech Mono + Orbitron (90s-terminal scientific) | Showcase |
+| Voice/File | Browser MediaRecorder → /stt; CSV upload → /inspect/upload | Showcase |
 | Design | 2026 AI-UI research (glass, neon glow, shimmer=processing) | Showcase |
 
 ---
