@@ -111,6 +111,40 @@ async def health():
     return {"status": "ok", "rag_docs": docs}
 
 
+# ── Data-quality demo (flagship FDE loop) ────────────────────────────────────
+
+@app.get("/demo/dataquality")
+async def demo_dataquality():
+    """Run the inspect→fix→evaluate loop and return before/after scorecard JSON."""
+
+    def _run():
+        from ..dataquality.cleaner import clean_dataset
+        from ..dataquality.evaluate import evaluate_quality
+        from ..dataquality.generate_broken import generate
+        from ..dataquality.profiler import profile_dataset
+
+        gen = generate()
+        cust, orders = gen["customers"], gen["orders"]
+        report = profile_dataset(cust, orders)
+        before = evaluate_quality(cust, orders)
+        result = clean_dataset(cust, orders)
+        after = evaluate_quality(result["customers_clean"], result["orders_clean"])
+
+        defects = list(report.get("defects", []))
+        for tbl in report.get("tables", {}).values():
+            defects.extend(tbl.get("issues", []))
+
+        return {
+            "before": before,
+            "after": after,
+            "changelog": result["changelog"],
+            "defects": defects,
+            "quarantined": result["quarantined_rows"],
+        }
+
+    return await run_in_threadpool(_run)
+
+
 # ── Chat ─────────────────────────────────────────────────────────────────────
 
 @app.post("/chat", response_model=ChatResponse)
