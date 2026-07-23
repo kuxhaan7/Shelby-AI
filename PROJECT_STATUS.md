@@ -190,16 +190,19 @@ Shelby's responses are scored by a LangChain LCEL judge (`shelby/evals/`) on
 (answers the question given the context). Run against the 4-example dataset
 with real Claude calls (judge model: `claude-haiku-4-5`):
 
-| Question | Faithfulness | Relevance |
-|----------|:------------:|:---------:|
-| What is Shelby? | 100% | 100% |
-| How does Shelby remember things across sessions? | 100% | 100% |
-| What tools can Shelby use? | 100% | 100% |
-| What API does Shelby expose? | 100% | 100% |
+| Question | Faithfulness | Relevance | Conciseness |
+|----------|:------------:|:---------:|:-----------:|
+| What is Shelby? | 1.00 | 1.00 | 0.85 |
+| How does Shelby remember things across sessions? | 1.00 | 1.00 | 0.90 |
+| What tools can Shelby use? | 1.00 | 1.00 | 1.00 |
+| What API does Shelby expose? | 1.00 | 1.00 | 0.90 |
 
-**All examples pass** (faithfulness & relevance = 1.0), stable across repeated
-runs; the 27 structural tests stay green. Getting here surfaced and fixed two
-real bugs — context grounding and a context-blind relevance judge (see §3).
+**All examples pass** (faithfulness & relevance = 1.0; conciseness avg 0.91),
+stable across repeated runs; the 27 structural tests stay green. Verified as a
+real LangSmith experiment (`shelby-qa-a12b89b9`) — raw per-run export and
+summary are committed under `evals_results/` and `docs/EVAL_RESULTS.md`.
+Getting here surfaced and fixed two real bugs — context grounding and a
+context-blind relevance judge (see §3).
 
 Run it:
 ```bash
