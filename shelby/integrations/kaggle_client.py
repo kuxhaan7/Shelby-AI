@@ -18,7 +18,9 @@ import os
 import subprocess
 from pathlib import Path
 
-DOWNLOAD_DIR = Path("data/kaggle_downloads")
+from ..paths import kaggle_dir
+
+DOWNLOAD_DIR = kaggle_dir()
 
 _SETUP_HINT = (
     "Kaggle API token not configured. Get one at "

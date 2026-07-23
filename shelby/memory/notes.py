@@ -13,7 +13,11 @@ class NotesStore:
     """Persistent key-value store backed by a single JSON file."""
 
     def __init__(self, path: str | None = None) -> None:
-        self._path = Path(path or os.getenv("SHELBY_MEMORY_FILE", "./data/memory.json"))
+        if path:
+            self._path = Path(path)
+        else:
+            from ..paths import memory_file
+            self._path = memory_file()
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._data: dict[str, Any] = {}
         self._load()

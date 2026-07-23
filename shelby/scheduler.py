@@ -11,8 +11,10 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 log = logging.getLogger(__name__)
-_DATA_DIR = Path("data")
-_TASKS_FILE = _DATA_DIR / "scheduled_tasks.json"
+from .paths import tasks_file
+
+_TASKS_FILE = tasks_file()
+_DATA_DIR = _TASKS_FILE.parent
 
 # Heartbeat interval in minutes
 _HEARTBEAT_MINUTES = 30

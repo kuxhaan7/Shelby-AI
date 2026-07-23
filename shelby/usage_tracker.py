@@ -6,7 +6,9 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-_FILE = Path("data/usage_stats.json")
+from .paths import usage_file
+
+_FILE = usage_file()
 
 # Approximate cost per million tokens (USD) — update if Anthropic pricing changes
 _COST = {

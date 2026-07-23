@@ -15,7 +15,8 @@ class RagStore:
     """Thin wrapper around ChromaDB for document storage and semantic retrieval."""
 
     def __init__(self, persist_dir: str | None = None, collection: str = "shelby") -> None:
-        persist_dir = persist_dir or os.getenv("CHROMA_PERSIST_DIR", "./data/chroma")
+        from ..paths import chroma_dir
+        persist_dir = persist_dir or str(chroma_dir())
         Path(persist_dir).mkdir(parents=True, exist_ok=True)
 
         self._client = chromadb.PersistentClient(

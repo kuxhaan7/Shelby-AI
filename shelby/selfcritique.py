@@ -25,7 +25,9 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-_LESSONS_FILE = Path("data/lessons.json")
+from .paths import lessons_file
+
+_LESSONS_FILE = lessons_file()
 _CRITIC_MODEL = os.getenv("SHELBY_CRITIC_MODEL", "claude-sonnet-5")
 _MAX_DIGEST = 12  # how many recent lessons to inject into conversation memory
 

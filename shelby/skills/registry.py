@@ -14,8 +14,12 @@ class SkillRegistry:
     """Manages skills stored as .py files in a skills directory."""
 
     def __init__(self, skills_dir: str | None = None) -> None:
-        self._dir = Path(skills_dir or os.getenv("SHELBY_SKILLS_DIR", "./data/skills"))
+        from ..paths import seed_bundled_skills, skills_dir as default_skills_dir
+        self._dir = Path(skills_dir) if skills_dir else default_skills_dir()
         self._dir.mkdir(parents=True, exist_ok=True)
+        # Seed image-bundled skills onto the (possibly volume-backed) dir so
+        # they survive alongside skills learned at runtime.
+        seed_bundled_skills(self._dir)
 
     # ── Discovery ─────────────────────────────────────────────────────────────
 
