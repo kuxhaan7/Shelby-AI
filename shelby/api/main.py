@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
@@ -143,6 +143,74 @@ async def demo_dataquality():
         }
 
     return await run_in_threadpool(_run)
+
+
+# ── Voice input (STT) ────────────────────────────────────────────────────────
+
+@app.post("/stt")
+async def stt(audio: UploadFile = File(...)):
+    """Transcribe an uploaded audio clip (browser mic recording) to text."""
+    if not os.getenv("ELEVENLABS_API_KEY"):
+        raise HTTPException(503, "Voice input unavailable (ELEVENLABS_API_KEY not set)")
+    data = await audio.read()
+    if not data:
+        raise HTTPException(400, "Empty audio upload")
+
+    from ..stt.elevenlabs import transcribe
+    mime = audio.content_type or "audio/webm"
+    text = await run_in_threadpool(transcribe, data, mime)
+    if not text:
+        raise HTTPException(422, "Could not transcribe audio")
+    return {"text": text}
+
+
+# ── File input (upload a CSV → generic data-quality profile) ─────────────────
+
+@app.post("/inspect/upload")
+async def inspect_upload(file: UploadFile = File(...)):
+    """Profile any uploaded CSV: rows, columns, duplicates, nulls, quality score."""
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(400, "Empty file")
+
+    def _profile(raw_bytes: bytes, name: str) -> dict:
+        import io
+        import pandas as pd
+
+        try:
+            df = pd.read_csv(io.BytesIO(raw_bytes), dtype=str, keep_default_na=True)
+        except Exception as exc:
+            return {"error": f"Could not parse CSV: {exc}"}
+
+        n = len(df)
+        cols = list(df.columns)
+        dupes = int(df.duplicated().sum())
+        nulls = {c: int(df[c].isna().sum() + (df[c] == "").sum()) for c in cols}
+        total_cells = n * len(cols) if cols else 0
+        total_nulls = sum(nulls.values())
+
+        completeness = round(100 * (1 - total_nulls / total_cells), 1) if total_cells else 100.0
+        uniqueness = round(100 * (1 - dupes / n), 1) if n else 100.0
+        overall = round((completeness + uniqueness) / 2, 1)
+
+        issues = []
+        if dupes:
+            issues.append(f"{dupes} duplicate rows")
+        for col, cnt in sorted(nulls.items(), key=lambda x: -x[1])[:5]:
+            if cnt:
+                issues.append(f"{cnt} missing values in '{col}'")
+
+        return {
+            "filename": name,
+            "rows": n,
+            "columns": cols,
+            "duplicate_rows": dupes,
+            "missing_cells": total_nulls,
+            "scores": {"completeness": completeness, "uniqueness": uniqueness, "overall": overall},
+            "issues": issues,
+        }
+
+    return await run_in_threadpool(_profile, raw, file.filename or "upload.csv")
 
 
 # ── Chat ─────────────────────────────────────────────────────────────────────
