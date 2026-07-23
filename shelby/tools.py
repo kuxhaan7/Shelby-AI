@@ -228,6 +228,22 @@ TOOL_SCHEMAS = [
             "required": ["dataset_ref"],
         },
     },
+    {
+        "name": "send_file",
+        "description": (
+            "Deliver a file that exists on disk to the user (Telegram sends it as a document; "
+            "the web UI shows a download button). Use this whenever the user asks for a file — "
+            "e.g. a cleaned CSV you produced with fix_dataset, or a dataset you downloaded. "
+            "Pass the exact path. Files must live under Shelby's data directory."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Path to the file to send, e.g. the '_clean.csv' returned by fix_dataset."},
+            },
+            "required": ["path"],
+        },
+    },
 ]
 
 
@@ -370,6 +386,32 @@ def kaggle_search(args: dict) -> str:
     return "\n".join(lines)
 
 
+_MAX_SEND_BYTES = 45 * 1024 * 1024  # Telegram bot sendDocument limit is 50MB
+
+
+def send_file(args: dict, outbox=None) -> str:
+    from .paths import DATA_DIR
+
+    raw = (args.get("path") or "").strip()
+    if not raw:
+        return "No path provided."
+    p = Path(raw)
+    if not p.exists() or not p.is_file():
+        return f"No file found at {raw}."
+    # Security: only deliver files under Shelby's own data directory.
+    try:
+        p.resolve().relative_to(DATA_DIR.resolve())
+    except ValueError:
+        return f"Refusing to send {raw}: outside the data directory."
+    size = p.stat().st_size
+    if size > _MAX_SEND_BYTES:
+        return f"'{p.name}' is {size // (1024*1024)}MB — too large to send (limit ~45MB)."
+    if outbox is None:
+        return f"'{p.name}' is ready at {raw}, but no delivery channel is available right now."
+    outbox.append(str(p.resolve()))
+    return f"✅ Queued '{p.name}' ({size:,} bytes) for delivery to the user."
+
+
 def kaggle_download(args: dict) -> str:
     from .dataquality.quickprofile import quick_profile_bytes
     from .integrations.kaggle_client import download
@@ -406,6 +448,7 @@ def dispatch(
     notes_store=None,
     skill_registry=None,
     task_scheduler=None,
+    outbox=None,
 ) -> Any:
     match tool_name:
         case "get_current_time":
@@ -438,5 +481,7 @@ def dispatch(
             return kaggle_search(tool_input)
         case "kaggle_download":
             return kaggle_download(tool_input)
+        case "send_file":
+            return send_file(tool_input, outbox)
         case _:
             return f"Unknown tool: {tool_name}"

@@ -22,6 +22,7 @@ from ..skills.registry import SkillRegistry
 from .models import (
     ChatRequest,
     ChatResponse,
+    FileRef,
     IngestRequest,
     IngestResponse,
     SearchRequest,
@@ -177,6 +178,21 @@ async def inspect_upload(file: UploadFile = File(...)):
     return await run_in_threadpool(quick_profile_bytes, raw, file.filename or "upload.csv")
 
 
+# ── File download ────────────────────────────────────────────────────────────
+
+@app.get("/download/{relpath:path}")
+async def download(relpath: str):
+    """Serve a file Shelby generated. Restricted to files under the data dir."""
+    from ..paths import DATA_DIR
+    base = DATA_DIR.resolve()
+    target = (base / relpath).resolve()
+    if base != target and base not in target.parents:
+        raise HTTPException(404, "Not found")
+    if not target.is_file():
+        raise HTTPException(404, "Not found")
+    return FileResponse(target, filename=target.name, media_type="application/octet-stream")
+
+
 # ── Chat ─────────────────────────────────────────────────────────────────────
 
 @app.post("/chat", response_model=ChatResponse)
@@ -187,9 +203,23 @@ async def chat(req: ChatRequest):
         raise HTTPException(400, "Use /chat/stream for streaming responses")
 
     messages = [m.model_dump() for m in req.messages]
+    files: list[str] = []
     # Run synchronous agent in a thread so the event loop stays free
-    reply, usage = await run_in_threadpool(agent.chat_with_usage, messages)
-    return ChatResponse(reply=reply, model=usage.model)
+    reply, usage = await run_in_threadpool(
+        lambda: agent.chat_with_usage(messages, collect_files=files)
+    )
+
+    from ..paths import DATA_DIR
+    base = DATA_DIR.resolve()
+    refs = []
+    for f in files:
+        try:
+            rel = Path(f).resolve().relative_to(base)
+            refs.append(FileRef(name=Path(f).name, url=f"/download/{rel}"))
+        except ValueError:
+            continue
+
+    return ChatResponse(reply=reply, model=usage.model, files=refs)
 
 
 @app.post("/chat/stream")

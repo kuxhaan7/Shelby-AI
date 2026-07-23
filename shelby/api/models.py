@@ -14,9 +14,15 @@ class ChatRequest(BaseModel):
     stream: bool = False
 
 
+class FileRef(BaseModel):
+    name: str
+    url: str
+
+
 class ChatResponse(BaseModel):
     reply: str
     model: str
+    files: list[FileRef] = []
 
 
 class IngestRequest(BaseModel):

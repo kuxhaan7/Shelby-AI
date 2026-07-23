@@ -156,6 +156,13 @@ body {
 @keyframes recpulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,60,200,0.5); } 50% { box-shadow: 0 0 0 6px rgba(255,60,200,0); } }
 #send { background: linear-gradient(135deg, var(--cyan), var(--magenta)); border: none; color: #04040c; box-shadow: 0 0 16px rgba(34,224,255,0.35); }
 #send:disabled { opacity: .35; box-shadow: none; cursor: not-allowed; }
+.dl-wrap { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
+.dl-chip { display: inline-flex; align-items: center; gap: 7px; text-decoration: none;
+  font-family: var(--mono); font-size: 12px; color: var(--lime);
+  border: 1px solid rgba(92,255,157,0.4); background: rgba(92,255,157,0.08);
+  padding: 7px 12px; border-radius: 4px; transition: all .15s; }
+.dl-chip:hover { box-shadow: 0 0 12px rgba(92,255,157,0.35); border-color: var(--lime); }
+.dl-chip svg { width: 15px; height: 15px; }
 .hint { text-align: center; font-size: 10px; color: var(--muted); padding: 0 16px 8px; letter-spacing: 0.5px; flex-shrink: 0; }
 .hint b { color: var(--cyan); }
 
@@ -287,6 +294,17 @@ function think(label){
   chat.appendChild(w); sb(); return w;
 }
 const unthink=()=>document.getElementById('think')?.remove();
+function attachFiles(msgEl,files){
+  if(!files||!files.length||!msgEl)return;
+  const bubble=msgEl.querySelector('.bubble'); if(!bubble)return;
+  const wrap=document.createElement('div'); wrap.className='dl-wrap';
+  for(const f of files){
+    const a=document.createElement('a'); a.className='dl-chip'; a.href=f.url; a.download=f.name;
+    a.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>${esc(f.name)}</span>`;
+    wrap.appendChild(a);
+  }
+  bubble.appendChild(wrap); sb();
+}
 
 /* ── Chat ───────────────────────────────────────────────────── */
 const input=document.getElementById('input'), sendBtn=document.getElementById('send');
@@ -300,7 +318,7 @@ async function send(){
     const r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:history,stream:false})});
     clearTimeout(slow); unthink();
     if(!r.ok){const x=await r.text().catch(()=>r.statusText);throw new Error(`${r.status} ${x.slice(0,180)}`);}
-    const d=await r.json(); add('shelby',md(d.reply),`model: ${d.model}`); history.push({role:'assistant',content:d.reply});
+    const d=await r.json(); const w=add('shelby',md(d.reply),`model: ${d.model}`); attachFiles(w,d.files); history.push({role:'assistant',content:d.reply});
   }catch(e){clearTimeout(slow);unthink();add('shelby',`<strong>⚠ ERROR</strong><br>${esc(String(e))}`);}
   finally{loading=false;setBusy(false);input.focus();}
 }

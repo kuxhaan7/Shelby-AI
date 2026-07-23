@@ -17,11 +17,15 @@ def run(**kwargs) -> str:
         except Exception as exc:
             return f"❌ Could not read {path}: {exc}"
         clean, changelog = clean_df(df)
-        out_path = os.path.splitext(path)[0].replace(".csv", "") + "_clean.csv"
+        # Write the cleaned copy into the outbox (under the data dir) so it can
+        # be delivered to the user with send_file.
+        from shelby.paths import outbox_dir
+        base = os.path.basename(path).replace(".gz", "").replace(".csv", "")
+        out_path = str(outbox_dir() / f"{base}_clean.csv")
         try:
             clean.to_csv(out_path, index=False)
-        except Exception:
-            out_path = "(in-memory only)"
+        except Exception as exc:
+            out_path = f"(could not write: {exc})"
         lines = [
             f"🔧 REAL FILE CLEANED: {path}",
             f"{len(df):,} → {len(clean):,} rows after cleaning",
@@ -33,6 +37,7 @@ def run(**kwargs) -> str:
         else:
             lines.append("  ✓ No transformations needed — file was already clean.")
         lines.append(f"\nClean output written to: {out_path}")
+        lines.append("To deliver this file to the user, call send_file with that exact path.")
         return "\n".join(lines)
 
     # ── No path → synthetic demo, EXPLICITLY labelled ─────────────────────────

@@ -56,6 +56,13 @@ def kaggle_dir() -> Path:
     return _p("SHELBY_KAGGLE_DIR", "kaggle_downloads")
 
 
+def outbox_dir() -> Path:
+    """Where generated files (e.g. cleaned CSVs) are written for delivery."""
+    d = _p("SHELBY_OUTBOX_DIR", "outbox")
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def seed_bundled_skills(target: Path | None = None) -> int:
     """Copy image-bundled skills into the (possibly volume-backed) skills dir.
 

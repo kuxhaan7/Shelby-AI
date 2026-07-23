@@ -47,6 +47,7 @@ SYSTEM_PROMPT = """You are Shelby — a razor-sharp, highly capable AI assistant
 - kaggle_search    → find real public datasets on Kaggle by keyword
 - kaggle_download  → download a Kaggle dataset and auto-profile every CSV for data-quality issues
 - run_skill self_improve → self-critique an answer, learn a durable lesson, and produce a better answer
+- send_file        → deliver a file on disk to the user (Telegram document / web download button)
 - calculate        → math
 - get_current_time → current UTC time
 
@@ -61,6 +62,7 @@ SYSTEM_PROMPT = """You are Shelby — a razor-sharp, highly capable AI assistant
 8. If the user asks about news, prices, weather, sports, or any live data — search immediately without asking for permission.
 9. SELF-IMPROVE: when the user corrects you, points out a mistake, or expresses dissatisfaction, run the self_improve skill (question=…, answer=…, feedback=…). It critiques your answer, stores a durable lesson, and gives you a better answer to deliver. Then give the improved answer.
 10. If a memory entry named 'learned_lessons' is present, treat those lessons as standing rules — you learned them from past mistakes; do not repeat them. Before a hard or high-stakes question, you may run self_improve with mode='recall' to pull relevant past lessons first.
+11. DELIVERING FILES: you CAN send files to the user — never claim you can't due to Telegram/platform limits. When the user asks for a file, or after you produce one (e.g. a cleaned CSV from fix_dataset), call send_file with its exact path. It's delivered as a Telegram document or a web download button. Only files under the data directory can be sent.
 
 ## YOUR FLAGSHIP CAPABILITY (data-quality FDE loop)
 You can take a broken enterprise dataset and fix it end-to-end — the exact job a Palantir Forward-Deployed Engineer does. You have three built-in skills for this:
@@ -157,14 +159,19 @@ class ShelbyAgent:
         return text
 
     def chat_with_usage(
-        self, messages: list[dict], max_iterations: int = 6
+        self, messages: list[dict], max_iterations: int = 6,
+        collect_files: list[str] | None = None,
     ) -> tuple[str, TokenUsage]:
-        """Like chat() but also returns accumulated TokenUsage."""
+        """Like chat() but also returns accumulated TokenUsage.
+
+        Pass a list as *collect_files* to receive the paths of any files the
+        agent queued for delivery (via the send_file tool) during this call.
+        """
         last_exc: Exception | None = None
 
         for model in MODEL_CHAIN:
             try:
-                return self._run(messages, model, max_iterations)
+                return self._run(messages, model, max_iterations, collect_files)
             except Exception as exc:
                 if _is_fallback_error(exc) and model != MODEL_CHAIN[-1]:
                     log.warning("Model %s failed (%s), falling back to next model.", model, exc)
@@ -176,7 +183,8 @@ class ShelbyAgent:
         raise RuntimeError("All models in fallback chain failed.") from last_exc
 
     def _run(
-        self, messages: list[dict], model: str, max_iterations: int
+        self, messages: list[dict], model: str, max_iterations: int,
+        collect_files: list[str] | None = None,
     ) -> tuple[str, TokenUsage]:
         msgs = list(messages)
         usage = TokenUsage(model=model)
@@ -205,6 +213,7 @@ class ShelbyAgent:
                             notes_store=self._notes,
                             skill_registry=self._skills,
                             task_scheduler=self._scheduler,
+                            outbox=collect_files,
                         )
                         tool_results.append({
                             "type": "tool_result",

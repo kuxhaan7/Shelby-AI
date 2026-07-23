@@ -126,9 +126,10 @@ async def _process(update: Update, user_text: str, reply_with_voice: bool) -> No
 
     await update.message.chat.send_action(ChatAction.TYPING)
 
+    files: list[str] = []
     try:
         agent = _get_agent()
-        reply, usage = agent.chat_with_usage(history)
+        reply, usage = agent.chat_with_usage(history, collect_files=files)
     except Exception as exc:
         log.exception("Agent error for user %s", user_id)
         reply = f"Something went wrong: {exc}"
@@ -156,6 +157,16 @@ async def _process(update: Update, user_text: str, reply_with_voice: bool) -> No
     else:
         for chunk in _split(reply, 4096):
             await update.message.reply_text(chunk)
+
+    # Deliver any files Shelby queued (e.g. a cleaned CSV) as documents.
+    for fpath in files:
+        try:
+            await update.message.chat.send_action(ChatAction.UPLOAD_DOCUMENT)
+            with open(fpath, "rb") as fh:
+                await update.message.reply_document(document=fh, filename=os.path.basename(fpath))
+        except Exception as exc:
+            log.error("Failed to send document %s: %s", fpath, exc)
+            await update.message.reply_text(f"(Couldn't send {os.path.basename(fpath)}: {exc})")
 
     if usage and os.getenv("SHELBY_SHOW_TOKENS"):
         await update.message.reply_text(f"📊 `{usage.summary()}`", parse_mode="Markdown")
