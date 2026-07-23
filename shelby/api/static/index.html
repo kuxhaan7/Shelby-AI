@@ -166,7 +166,45 @@ body {
 .hint { text-align: center; font-size: 10px; color: var(--muted); padding: 0 16px 8px; letter-spacing: 0.5px; flex-shrink: 0; }
 .hint b { color: var(--cyan); }
 
-@media (max-width: 640px) { .caps { display: none; } .sys { display: none; } .bubble, .card { max-width: 94%; } .brand { font-size: 16px; } }
+/* ── Connectors modal ───────────────────────────────────────── */
+.modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px;
+  background: rgba(2,2,8,0.72); backdrop-filter: blur(6px); }
+.modal[hidden] { display: none; }
+.modal-card { width: min(560px, 100%); max-height: 86vh; overflow-y: auto; border-radius: 6px; padding: 20px 22px;
+  border: 1px solid var(--border); box-shadow: 0 0 40px rgba(34,224,255,0.16); }
+.modal-card::-webkit-scrollbar { width: 6px; } .modal-card::-webkit-scrollbar-thumb { background: rgba(34,224,255,0.25); border-radius: 3px; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; }
+.modal-title { font-family: var(--display); font-size: 15px; letter-spacing: 2px; color: #fff; }
+.modal-x { background: none; border: 1px solid var(--border); color: var(--muted); width: 28px; height: 28px; border-radius: 4px;
+  cursor: pointer; font-family: var(--mono); transition: all .15s; }
+.modal-x:hover { color: var(--magenta); border-color: var(--border-hot); }
+.modal-sub { font-size: 11.5px; color: var(--muted); margin: 8px 0 16px; line-height: 1.6; }
+.mcp-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.mcp-empty { font-size: 12px; color: var(--muted); padding: 10px; text-align: center; border: 1px dashed var(--border); border-radius: 4px; }
+.mcp-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border);
+  border-left: 3px solid var(--cyan); border-radius: 4px; background: rgba(34,224,255,0.05); }
+.mcp-item .mi-main { flex: 1; min-width: 0; }
+.mcp-item .mi-name { font-family: var(--display); font-size: 12.5px; letter-spacing: 1px; color: #fff; }
+.mcp-item .mi-url { font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-item .mi-tags { display: flex; gap: 5px; margin-top: 3px; }
+.mcp-tag { font-size: 9px; letter-spacing: 0.5px; text-transform: uppercase; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border); color: var(--muted); }
+.mcp-tag.on { color: var(--lime); border-color: rgba(92,255,157,0.4); }
+.mcp-tag.env { color: var(--amber); border-color: rgba(255,207,77,0.4); }
+.mi-del { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 4px; padding: 5px 9px;
+  font-family: var(--mono); font-size: 11px; cursor: pointer; flex-shrink: 0; transition: all .15s; }
+.mi-del:hover:not(:disabled) { color: var(--magenta); border-color: var(--border-hot); }
+.mi-del:disabled { opacity: 0.35; cursor: not-allowed; }
+.mcp-form { border-top: 1px solid var(--border); padding-top: 15px; }
+.mcp-fields { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 11px; }
+.mcp-in { flex: 1 1 140px; background: rgba(0,0,0,0.4); border: 1px solid var(--border); border-radius: 4px; color: var(--text);
+  font-family: var(--mono); font-size: 13px; padding: 9px 11px; outline: none; transition: all .15s; }
+.mcp-in.wide { flex-basis: 100%; }
+.mcp-in:focus { border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(34,224,255,0.16); }
+.mcp-in::placeholder { color: var(--muted); }
+.mcp-msg { font-size: 11.5px; margin-top: 10px; min-height: 15px; }
+.mcp-msg.ok { color: var(--lime); } .mcp-msg.err { color: var(--magenta); }
+
+@media (max-width: 640px) { .caps { display: none; } .sys { display: none; } .bubble, .card { max-width: 94%; } .brand { font-size: 16px; } #mcp-btn { display: none; } }
 </style>
 
 <div class="bg-aurora"><div class="blob c1"></div><div class="blob c2"></div><div class="blob c3"></div><div class="blob c4"></div></div>
@@ -194,6 +232,7 @@ body {
       <div class="caps"><span class="cap">WEB</span><span class="cap">MEM</span><span class="cap">SKILLS</span><span class="cap">DATA-QC</span></div>
     </div>
     <div class="hbtns">
+      <button id="mcp-btn" class="hbtn">🔌 CONNECTORS</button>
       <button id="demo-btn" class="hbtn hot">⚡ DATA-QC DEMO</button>
       <button id="clear-btn" class="hbtn ghost">CLR</button>
     </div>
@@ -216,6 +255,29 @@ body {
     </button>
   </div>
   <div class="hint"><b>ENTER</b> send · <b>SHIFT+ENTER</b> newline · <b>📎</b> upload CSV · <b>🎤</b> voice · powered by Claude + ElevenLabs</div>
+</div>
+
+<!-- ── Connectors modal ─────────────────────────────────────────── -->
+<div id="mcp-modal" class="modal" hidden>
+  <div class="modal-card glass">
+    <div class="modal-head">
+      <div class="modal-title">🔌 CONNECTORS // MCP</div>
+      <button id="mcp-close" class="modal-x" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-sub">Connect Shelby to any external service by its MCP server URL — like adding a connector in Claude. Its tools become available to Shelby on the next message.</div>
+
+    <div id="mcp-list" class="mcp-list"><div class="mcp-empty">loading…</div></div>
+
+    <form id="mcp-form" class="mcp-form">
+      <div class="mcp-fields">
+        <input id="mcp-name" class="mcp-in" placeholder="name (e.g. notion)" autocomplete="off" required>
+        <input id="mcp-url" class="mcp-in wide" placeholder="https://mcp.example.com/mcp" autocomplete="off" required>
+        <input id="mcp-token" class="mcp-in" type="password" placeholder="token (optional)" autocomplete="off">
+      </div>
+      <button type="submit" id="mcp-add" class="hbtn">＋ CONNECT</button>
+      <div id="mcp-msg" class="mcp-msg"></div>
+    </form>
+  </div>
 </div>
 
 <script type="module">
@@ -407,6 +469,65 @@ micBtn.onclick=async()=>{
     rec.start(); micBtn.classList.add('rec');
   }catch(e){add('shelby',`<strong>⚠ MIC ACCESS DENIED</strong><br>${esc(String(e))}`);}
 }
+
+/* ── Connectors (MCP) ───────────────────────────────────────── */
+const mcpModal=document.getElementById('mcp-modal');
+const mcpList=document.getElementById('mcp-list');
+const mcpMsg=document.getElementById('mcp-msg');
+function mcpSetMsg(t,ok){mcpMsg.textContent=t||'';mcpMsg.className='mcp-msg'+(t?(ok?' ok':' err'):'');}
+async function mcpLoad(){
+  mcpList.innerHTML='<div class="mcp-empty">loading…</div>';
+  try{
+    const r=await fetch('/mcp'); const d=await r.json(); const servers=d.servers||[];
+    if(!servers.length){mcpList.innerHTML='<div class="mcp-empty">no services connected yet — add one below</div>';return;}
+    mcpList.innerHTML='';
+    for(const s of servers){
+      const isEnv=s.source==='environment';
+      const el=document.createElement('div'); el.className='mcp-item';
+      el.innerHTML=`<div class="mi-main">
+          <div class="mi-name">${esc(s.name)}</div>
+          <div class="mi-url">${esc(s.url)}</div>
+          <div class="mi-tags">
+            <span class="mcp-tag ${s.authenticated?'on':''}">${s.authenticated?'authenticated':'no-auth'}</span>
+            <span class="mcp-tag ${isEnv?'env':''}">${esc(s.source)}</span>
+          </div>
+        </div>
+        <button class="mi-del" ${isEnv?'disabled title="set via environment — remove it there"':''}>${isEnv?'LOCKED':'✕ REMOVE'}</button>`;
+      if(!isEnv){el.querySelector('.mi-del').onclick=()=>mcpRemove(s.name);}
+      mcpList.appendChild(el);
+    }
+  }catch(e){mcpList.innerHTML=`<div class="mcp-empty">could not load: ${esc(String(e))}</div>`;}
+}
+async function mcpRemove(name){
+  mcpSetMsg('');
+  try{
+    const r=await fetch('/mcp/'+encodeURIComponent(name),{method:'DELETE'});
+    if(!r.ok){const x=await r.json().catch(()=>({}));throw new Error(x.detail||r.status);}
+    mcpSetMsg(`disconnected ${name}`,true); mcpLoad();
+  }catch(e){mcpSetMsg(String(e).replace('Error: ',''),false);}
+}
+document.getElementById('mcp-form').addEventListener('submit',async e=>{
+  e.preventDefault(); mcpSetMsg('');
+  const name=document.getElementById('mcp-name').value.trim();
+  const url=document.getElementById('mcp-url').value.trim();
+  const token=document.getElementById('mcp-token').value.trim();
+  const btn=document.getElementById('mcp-add'); btn.disabled=true;
+  try{
+    const body={name,url}; if(token)body.token=token;
+    const r=await fetch('/mcp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok){const x=await r.json().catch(()=>({}));throw new Error(x.detail||r.status);}
+    mcpSetMsg(`connected ${name} — its tools are live now`,true);
+    document.getElementById('mcp-name').value=''; document.getElementById('mcp-url').value=''; document.getElementById('mcp-token').value='';
+    mcpLoad();
+  }catch(e){mcpSetMsg(String(e).replace('Error: ',''),false);}
+  finally{btn.disabled=false;}
+});
+function mcpOpen(){mcpModal.hidden=false;mcpSetMsg('');mcpLoad();}
+function mcpCloseFn(){mcpModal.hidden=true;}
+document.getElementById('mcp-btn').onclick=mcpOpen;
+document.getElementById('mcp-close').onclick=mcpCloseFn;
+mcpModal.addEventListener('click',e=>{if(e.target===mcpModal)mcpCloseFn();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!mcpModal.hidden)mcpCloseFn();});
 
 /* ── Wiring ─────────────────────────────────────────────────── */
 input.addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,130)+'px';});
