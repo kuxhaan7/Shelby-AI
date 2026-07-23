@@ -95,6 +95,8 @@ Real engineering is the debugging. Every one of these was hit and fixed:
 | Deploy stuck "Queued" | **GitHub platform incident** (upstream) | Out of our control — code armed; auto-deploys on GitHub recovery |
 | `import kaggle` risked crashing Shelby | Package calls `sys.exit(1)` at import time with no credentials configured (confirmed by testing) | Never import the package directly — shell out to the `kaggle` CLI via subprocess, which fails safely |
 | **Fabricated results on real files** (dealbreaker) | inspect/fix/evaluate skills were hardwired to the synthetic customers×orders schema and silently ran the demo, narrating fake "orders/$amount" findings for a real Airbnb file | Built `dataquality/generic.py` — a real single-table loop; skills now take `path=` and analyse the actual file, labelling synthetic output "⚠️ NOT a real file"; system prompt enforces passing the real path |
+| Evals: Shelby ignored provided context | The aggressive "never say I don't know / use your tools" prompt made Shelby answer from its own knowledge — e.g. listing its real 20+ tools when the eval context named only four → faithfulness 0.0 | Added a scoped **context-grounding** rule: when a message contains a `Context:` block, treat it as the single source of truth and answer only from it (overrides the expansive rules for that turn) |
+| Evals: relevance judge was context-blind | The relevance evaluator only saw question+answer, so it scored a verbatim-faithful answer 0.3 by second-guessing whether "Shelby" meant a car/place, and docked answers for omitting facts absent from the context | Made `evaluate_answer_relevance` **context-aware** — the judge now scores completeness only against what the context supports |
 
 _Note: the co-author commit convention was ruled out as a cause of the queue —
 trailers are parsed after push and never touch builds._
@@ -178,6 +180,46 @@ FastAPI service (uvicorn)
 | 17 | **Self-improvement** — self-critique, learns durable lessons | `shelby/selfcritique.py` | ✅ |
 | 18 | **Persistent state** — all state under SHELBY_DATA_DIR (volume-ready) | `shelby/paths.py` | ✅ |
 | 19 | **External services (MCP)** — connect hosted MCP servers (Apollo, Gmail, Calendar…) via Anthropic's remote connector; add any by URL at runtime (connect_mcp), like Claude's connectors | `shelby/mcp/` | ✅ |
+
+---
+
+## 6b. Eval results (LangChain LLM-as-judge)
+
+Shelby's responses are scored by a LangChain LCEL judge (`shelby/evals/`) on
+**faithfulness** (no hallucination beyond the context) and **relevance**
+(answers the question given the context). Run against the 4-example dataset
+with real Claude calls (judge model: `claude-haiku-4-5`):
+
+| Question | Faithfulness | Relevance |
+|----------|:------------:|:---------:|
+| What is Shelby? | 100% | 100% |
+| How does Shelby remember things across sessions? | 100% | 100% |
+| What tools can Shelby use? | 100% | 100% |
+| What API does Shelby expose? | 100% | 100% |
+
+**All examples pass** (faithfulness & relevance = 1.0), stable across repeated
+runs; the 27 structural tests stay green. Getting here surfaced and fixed two
+real bugs — context grounding and a context-blind relevance judge (see §3).
+
+Run it:
+```bash
+export ANTHROPIC_API_KEY=...        # judge + agent
+python -m shelby.evals.run          # rich table, local
+```
+
+### LangSmith experiment (traced + scored in the UI)
+`shelby/evals/langsmith_run.py` runs the same suite as a LangSmith **Experiment**:
+it uploads the `shelby-qa` dataset, scores faithfulness/relevance/conciseness,
+and traces every agent + judge call. It enforces a pass gate (faithfulness &
+relevance ≥ 0.7).
+```bash
+export LANGSMITH_TRACING=true LANGSMITH_API_KEY=... LANGSMITH_PROJECT=Shelby
+export ANTHROPIC_API_KEY=...
+python -m shelby.evals.langsmith_run [--repetitions N]
+```
+_Note: this must run from an environment whose egress policy allows
+`api.smith.langchain.com`. The web-session sandbox blocks it (403 egress
+denial), so run it locally or from Railway; the code is validated and ready._
 
 ---
 
