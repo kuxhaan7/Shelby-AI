@@ -65,6 +65,7 @@ useful to a real person solving a real problem — never features for their own 
 | Showcase | Animated sci-fi emblem + glassmorphism redesign | 2026 AI-UI patterns; custom "sentinel" sigil animation |
 | Showcase | In-UI data-quality scorecard | One-click demo renders animated before/after bars |
 | Showcase | 90s-terminal theme + file & voice inputs | Scientific mono type, neon bg, Motion; upload CSV + speak |
+| Real-world data | Kaggle search + download tools | Key-only setup; Shelby finds & profiles real datasets itself |
 
 ---
 
@@ -88,6 +89,7 @@ Real engineering is the debugging. Every one of these was hit and fixed:
 | `data/` gitignored the skills too | Blanket `data/` ignore | Added `!data/skills/` exceptions |
 | Builder ran Railpack, no ffmpeg | railway.toml/nixpacks.toml conflicted; Railway defaulted | Pinned `builder = "DOCKERFILE"`; deleted nixpacks.toml |
 | Deploy stuck "Queued" | **GitHub platform incident** (upstream) | Out of our control — code armed; auto-deploys on GitHub recovery |
+| `import kaggle` risked crashing Shelby | Package calls `sys.exit(1)` at import time with no credentials configured (confirmed by testing) | Never import the package directly — shell out to the `kaggle` CLI via subprocess, which fails safely |
 
 _Note: the co-author commit convention was ruled out as a cause of the queue —
 trailers are parsed after push and never touch builds._
@@ -120,6 +122,7 @@ trailers are parsed after push and never touch builds._
 | Web UI | Terminal theme, Motion (Framer engine), file+voice input | Showcase |
 | Type | Share Tech Mono + Orbitron (90s-terminal scientific) | Showcase |
 | Voice/File | Browser MediaRecorder → /stt; CSV upload → /inspect/upload | Showcase |
+| Real-world data | Kaggle CLI (subprocess-wrapped) — kaggle_search / kaggle_download | Real-world data |
 | Design | 2026 AI-UI research (glass, neon glow, shimmer=processing) | Showcase |
 
 ---
