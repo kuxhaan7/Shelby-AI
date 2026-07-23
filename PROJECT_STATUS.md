@@ -62,6 +62,8 @@ useful to a real person solving a real problem — never features for their own 
 | Reliability | Heartbeat + cron scheduling | Shelby runs on its own schedule |
 | Flagship | Data-quality FDE loop | **76.0 → 100.0** on broken data |
 | Showcase | Public web chat UI | Hiring managers can demo it live |
+| Showcase | Animated sci-fi emblem + glassmorphism redesign | 2026 AI-UI patterns; custom "sentinel" sigil animation |
+| Showcase | In-UI data-quality scorecard | One-click demo renders animated before/after bars |
 
 ---
 
@@ -113,6 +115,8 @@ trailers are parsed after push and never touch builds._
 | Scheduling | APScheduler (heartbeat + cron) | Reliability |
 | Data quality | pandas — inspect/fix/evaluate loop | Flagship |
 | Web UI | Vanilla HTML/CSS/JS, streaming, markdown | Showcase |
+| Web UI | Glassmorphism 2.0, animated SVG emblem, live scorecard | Showcase |
+| Design | 2026 AI-UI research (glass, neon glow, shimmer=processing) | Showcase |
 
 ---
 
