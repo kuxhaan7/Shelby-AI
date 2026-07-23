@@ -67,6 +67,7 @@ useful to a real person solving a real problem — never features for their own 
 | Showcase | 90s-terminal theme + file & voice inputs | Scientific mono type, neon bg, Motion; upload CSV + speak |
 | Real-world data | Kaggle search + download tools | Key-only setup; Shelby finds & profiles real datasets itself |
 | Self-improvement | Self-critique skill (self_improve) | LLM-as-critic; learns durable lessons, applies them to future answers |
+| File delivery | send_file tool + /download endpoint | Sends files as Telegram documents / web download chips (path-safe) |
 
 ---
 
