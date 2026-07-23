@@ -108,8 +108,10 @@ async def index():
 
 @app.get("/health")
 async def health():
+    from ..mcp.connector import _entries
     docs = rag_store.count() if rag_store else 0
-    return {"status": "ok", "rag_docs": docs}
+    mcp = [{"name": e["name"], "authenticated": bool(e.get("token"))} for e in _entries()]
+    return {"status": "ok", "rag_docs": docs, "mcp_servers": mcp}
 
 
 # ── Data-quality demo (flagship FDE loop) ────────────────────────────────────

@@ -9,6 +9,7 @@ from typing import Any
 
 import anthropic
 
+from .mcp import MCP_BETA, describe_servers, mcp_servers
 from .memory.notes import NotesStore
 from .rag.store import RagStore
 from .skills.registry import SkillRegistry
@@ -84,6 +85,27 @@ If asked to test against a REAL-WORLD dataset, use kaggle_search to find one, th
 - All API keys (ElevenLabs, Tavily, Anthropic) are already configured in the environment. NEVER ask the user for API keys or credentials — they are already set up.
 - NEVER offer to "build a skill" for something that's already a built-in tool. Check list_skills and your tool list first.
 - Voice input also works — users can send voice messages which are transcribed before reaching you. Just respond normally."""
+
+# Appended to the system prompt at runtime when remote MCP servers are connected.
+_MCP_PROMPT = """
+
+## CONNECTED SERVICES (MCP)
+You are connected to live external services through MCP. Their tools appear
+alongside your own — call them directly to act on the user's real accounts
+(read/send email, look up contacts, manage calendar events, etc.). Connected:
+{servers}
+Use these tools when the task needs a real external action; don't describe the
+steps and ask the user to do them manually when you can do it yourself. Confirm
+before anything destructive or externally visible (sending an email, deleting an
+event). Never expose tokens or credentials in your replies."""
+
+
+def _system_prompt() -> str:
+    """System prompt, extended with a live list of connected MCP servers."""
+    servers = describe_servers()
+    if servers:
+        return SYSTEM_PROMPT + _MCP_PROMPT.format(servers=servers)
+    return SYSTEM_PROMPT
 
 log = logging.getLogger(__name__)
 
@@ -188,19 +210,34 @@ class ShelbyAgent:
     ) -> tuple[str, TokenUsage]:
         msgs = list(messages)
         usage = TokenUsage(model=model)
+        servers = mcp_servers()
+        system = _system_prompt()
 
         for _ in range(max_iterations):
-            response = self._client.messages.create(
+            kwargs: dict[str, Any] = dict(
                 model=model,
                 max_tokens=2048,
-                system=SYSTEM_PROMPT,
+                system=system,
                 tools=TOOL_SCHEMAS,
                 messages=msgs,
             )
+            if servers:
+                # Remote MCP servers are executed server-side by Claude; this
+                # requires the beta connector flag and goes through beta.messages.
+                kwargs["mcp_servers"] = servers
+                kwargs["betas"] = [MCP_BETA]
+                response = self._client.beta.messages.create(**kwargs)
+            else:
+                response = self._client.messages.create(**kwargs)
             usage.add(response.usage)
 
             if response.stop_reason == "end_turn":
                 return _extract_text(response), self._finish(usage)
+
+            # MCP tool calls can pause a long turn; feed the content back and continue.
+            if response.stop_reason == "pause_turn":
+                msgs.append({"role": "assistant", "content": response.content})
+                continue
 
             if response.stop_reason == "tool_use":
                 msgs.append({"role": "assistant", "content": response.content})

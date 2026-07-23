@@ -68,6 +68,7 @@ useful to a real person solving a real problem — never features for their own 
 | Real-world data | Kaggle search + download tools | Key-only setup; Shelby finds & profiles real datasets itself |
 | Self-improvement | Self-critique skill (self_improve) | LLM-as-critic; learns durable lessons, applies them to future answers |
 | File delivery | send_file tool + /download endpoint | Sends files as Telegram documents / web download chips (path-safe) |
+| External services | Remote MCP connector | Shelby uses hosted MCP servers (Apollo, Gmail, Calendar, …) — env-configured, no secrets in repo |
 
 ---
 
@@ -175,6 +176,7 @@ FastAPI service (uvicorn)
 | 16 | **Real-world data** — Kaggle search/download + generic single-CSV loop | `shelby/integrations/`, `dataquality/generic.py` | ✅ |
 | 17 | **Self-improvement** — self-critique, learns durable lessons | `shelby/selfcritique.py` | ✅ |
 | 18 | **Persistent state** — all state under SHELBY_DATA_DIR (volume-ready) | `shelby/paths.py` | ✅ |
+| 19 | **External services (MCP)** — connect hosted MCP servers (Apollo, Gmail, Calendar…) via Anthropic's remote connector, env-configured | `shelby/mcp/` | ✅ |
 
 ---
 
@@ -223,6 +225,7 @@ python -m shelby.dataquality.demo
 | `TAVILY_API_KEY` | Web search |
 | `KAGGLE_API_TOKEN` | Kaggle dataset search/download (optional) |
 | `SHELBY_DATA_DIR` | Base dir for all persistent state — set to the volume mount (e.g. `/data`) |
+| `SHELBY_MCP_SERVERS` / `SHELBY_MCP_<NAME>_URL` + `_TOKEN` | Connect hosted MCP servers (Apollo, Gmail, Calendar…). See `docs/MCP_SETUP.md`. All optional — connector is inactive if unset |
 
 ### Persistence (Railway volume)
 All writable state (memory, learned lessons, usage, scheduled tasks, RAG,
@@ -247,6 +250,7 @@ shelby/
 ├── rag/                ChromaDB store + ingest
 ├── memory/             JSON key-value NotesStore
 ├── skills/             dynamic skill registry
+├── mcp/                remote MCP connector (hosted external services)
 ├── telegram/           bot (text/voice)
 ├── tts/ · stt/         ElevenLabs voice
 └── evals/              LangChain LLM-as-judge
