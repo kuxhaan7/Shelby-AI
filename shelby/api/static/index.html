@@ -314,7 +314,7 @@ function spring(el){ if(el) el.classList.add('enter'); }
 
 /* Theme (white / black), persisted. */
 const root=document.documentElement;
-const savedTheme=localStorage.getItem('shelby-theme')||'light';
+const savedTheme=localStorage.getItem('shelby-theme')||'dark';
 root.setAttribute('data-theme',savedTheme);
 document.getElementById('theme-btn').onclick=()=>{
   const next=root.getAttribute('data-theme')==='dark'?'light':'dark';
