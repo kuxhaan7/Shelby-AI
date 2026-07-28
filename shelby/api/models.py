@@ -32,6 +32,12 @@ class McpConnectRequest(BaseModel):
     allowed_tools: list[str] | None = None
 
 
+class WebhookCreateRequest(BaseModel):
+    name: str
+    skill_name: str
+    secret: str | None = None
+
+
 class IngestRequest(BaseModel):
     text: str
     source: str = "api"

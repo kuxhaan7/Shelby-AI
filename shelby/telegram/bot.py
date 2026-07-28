@@ -56,7 +56,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "Hey! I'm Shelby.\n\n"
         "• Type → I reply in text\n"
         "• Send voice 🎤 → I reply in voice\n\n"
-        "Commands: /clear /testvoice /help\n"
+        "Commands: /clear /testvoice /id /help\n"
         f"Voice: {'ready 🔊' if tts else 'unavailable (no ELEVENLABS_API_KEY)'}"
     )
 
@@ -68,6 +68,16 @@ async def cmd_clear(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await cmd_start(update, ctx)
+
+
+async def cmd_id(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Echo this chat's id — set it as TELEGRAM_NOTIFY_CHAT_ID to receive webhook alerts here."""
+    await update.message.reply_text(
+        f"This chat's id is `{update.effective_chat.id}`.\n\n"
+        "Set it as TELEGRAM_NOTIFY_CHAT_ID to have Shelby message you here "
+        "when a webhook fires.",
+        parse_mode="Markdown",
+    )
 
 
 async def cmd_testvoice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -229,6 +239,7 @@ def build_app(shared_agent: ShelbyAgent | None = None) -> Application:
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("clear", cmd_clear))
     app.add_handler(CommandHandler("testvoice", cmd_testvoice))
+    app.add_handler(CommandHandler("id", cmd_id))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     return app

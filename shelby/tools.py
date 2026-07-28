@@ -284,6 +284,43 @@ TOOL_SCHEMAS = [
             "required": ["name"],
         },
     },
+    {
+        "name": "create_webhook",
+        "description": (
+            "Register an incoming webhook that lets an external service trigger a saved skill "
+            "by sending an HTTP POST. Use this when the user wants Shelby to react automatically "
+            "to something outside the conversation — a new file landing somewhere, a GitHub push, "
+            "a cron host, a form submission. The skill must already exist; use learn_skill first "
+            "if it doesn't. The webhook's JSON body is passed to the skill as its keyword "
+            "arguments. Returns the trigger path and a secret — show the secret to the user once "
+            "and tell them it will not be shown again; they must send it back as the "
+            "X-Shelby-Secret header (or a ?secret= query param) when triggering the webhook."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Short identifier for the webhook, e.g. 'new-dataset'."},
+                "skill_name": {"type": "string", "description": "Name of an existing skill to run when this webhook fires."},
+            },
+            "required": ["name", "skill_name"],
+        },
+    },
+    {
+        "name": "list_webhooks",
+        "description": "List all registered incoming webhooks and which skill each one triggers.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "delete_webhook",
+        "description": "Remove a registered webhook by name.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Name of the webhook to remove."},
+            },
+            "required": ["name"],
+        },
+    },
 ]
 
 
@@ -516,6 +553,36 @@ def disconnect_mcp(args: dict) -> str:
     return f"Disconnected '{result['name']}'. Its tools are no longer available."
 
 
+def create_webhook(args: dict, skill_registry=None) -> str:
+    from .webhooks import registry as webhook_registry
+    skill_name = args.get("skill_name", "")
+    result = webhook_registry.create(args.get("name", ""), skill_name, skill_registry=skill_registry)
+    if not result.get("ok"):
+        return f"Could not create webhook: {result.get('error')}"
+    return (
+        f"Webhook '{result['name']}' created, wired to skill '{skill_name}'. "
+        f"Trigger it with POST /webhooks/{result['name']} on the deployed URL, "
+        f"header 'X-Shelby-Secret: {result['secret']}'. "
+        f"Save this secret now — it will not be shown again."
+    )
+
+
+def list_webhooks(_: dict) -> str:
+    from .webhooks import registry as webhook_registry
+    hooks = webhook_registry.list_webhooks()
+    if not hooks:
+        return "No webhooks registered yet. Use create_webhook to add one."
+    return "\n".join(f"• {h['name']} -> runs skill '{h['skill']}'" for h in hooks)
+
+
+def delete_webhook(args: dict) -> str:
+    from .webhooks import registry as webhook_registry
+    result = webhook_registry.remove(args.get("name", ""))
+    if not result.get("ok"):
+        return result.get("error", "Could not delete webhook.")
+    return f"Webhook '{result['name']}' removed."
+
+
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
 def dispatch(
@@ -566,5 +633,11 @@ def dispatch(
             return list_mcp(tool_input)
         case "disconnect_mcp":
             return disconnect_mcp(tool_input)
+        case "create_webhook":
+            return create_webhook(tool_input, skill_registry)
+        case "list_webhooks":
+            return list_webhooks(tool_input)
+        case "delete_webhook":
+            return delete_webhook(tool_input)
         case _:
             return f"Unknown tool: {tool_name}"

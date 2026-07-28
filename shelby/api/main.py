@@ -8,7 +8,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+import json
+
+from fastapi import BackgroundTasks, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
@@ -29,6 +31,7 @@ from .models import (
     SearchRequest,
     SearchResponse,
     SearchResult,
+    WebhookCreateRequest,
 )
 
 log = logging.getLogger(__name__)
@@ -110,9 +113,11 @@ async def index():
 @app.get("/health")
 async def health():
     from ..mcp import list_servers
+    from ..webhooks import registry as webhook_registry
     docs = rag_store.count() if rag_store else 0
     mcp = [{"name": s["name"], "authenticated": s["authenticated"]} for s in list_servers()]
-    return {"status": "ok", "rag_docs": docs, "mcp_servers": mcp}
+    webhooks = len(webhook_registry.list_webhooks())
+    return {"status": "ok", "rag_docs": docs, "mcp_servers": mcp, "webhooks": webhooks}
 
 
 # ── MCP connectors (add any external service by URL, like Claude) ─────────────
@@ -144,6 +149,111 @@ async def mcp_disconnect(name: str):
     if not result.get("ok"):
         raise HTTPException(404, result.get("error", "Not found."))
     return {"ok": True, "name": result["name"]}
+
+
+# ── Incoming webhooks (external events trigger a saved skill) ────────────────
+
+_MAX_WEBHOOK_BYTES = 1 * 1024 * 1024  # 1MB — a webhook payload has no business being bigger
+
+
+@app.get("/webhooks")
+async def webhooks_list():
+    """List registered webhooks (secrets never returned)."""
+    from ..webhooks import registry as webhook_registry
+    return {"webhooks": webhook_registry.list_webhooks()}
+
+
+@app.post("/webhooks")
+async def webhooks_create(req: WebhookCreateRequest):
+    """Register a webhook bound to an existing skill. Returns the secret once."""
+    from ..webhooks import registry as webhook_registry
+    if agent is None:
+        raise HTTPException(503, "Agent not ready")
+    result = webhook_registry.create(
+        req.name, req.skill_name, req.secret, skill_registry=agent._skills,
+    )
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("error", "Could not create webhook."))
+    return result
+
+
+@app.delete("/webhooks/{name}")
+async def webhooks_delete(name: str):
+    """Remove a registered webhook by name."""
+    from ..webhooks import registry as webhook_registry
+    result = webhook_registry.remove(name)
+    if not result.get("ok"):
+        raise HTTPException(404, result.get("error", "Not found."))
+    return result
+
+
+def _notify_telegram(text: str) -> None:
+    """Best-effort push of *text* to a configured Telegram chat. No-ops if unset."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_NOTIFY_CHAT_ID")
+    if not token or not chat_id:
+        return
+    try:
+        import httpx
+        httpx.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": text[:4000]},
+            timeout=10,
+        )
+    except Exception:
+        log.exception("Failed to push webhook notification to Telegram")
+
+
+def _run_webhook_skill(name: str, skill_name: str, payload: dict) -> None:
+    """Runs in the background after a webhook is accepted; never blocks the request."""
+    try:
+        result = agent._skills.run(skill_name, payload)
+    except Exception as exc:
+        result = f"Webhook '{name}' -> skill '{skill_name}' raised: {exc}"
+        log.error(result)
+    log.info("Webhook '%s' ran skill '%s': %s", name, skill_name, str(result)[:300])
+    _notify_telegram(f"Webhook '{name}' fired.\n\n{result}")
+
+
+@app.post("/webhooks/{name}")
+async def webhooks_trigger(
+    name: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    x_shelby_secret: str | None = Header(default=None),
+):
+    """Public trigger endpoint. External services POST here to run a bound skill.
+
+    Auth is a shared secret, sent as the X-Shelby-Secret header (or a
+    ?secret= query param for services that can't set custom headers). The
+    request body is parsed as JSON and passed to the skill as kwargs; the
+    skill runs in the background so this always responds immediately.
+    """
+    from ..webhooks import registry as webhook_registry
+
+    hook = webhook_registry.get(name)
+    if not hook:
+        raise HTTPException(404, "Unknown webhook.")
+
+    provided = x_shelby_secret or request.query_params.get("secret")
+    if not webhook_registry.verify(name, provided or ""):
+        raise HTTPException(401, "Invalid or missing webhook secret.")
+
+    if agent is None or agent._skills is None:
+        raise HTTPException(503, "Agent not ready")
+
+    raw = await request.body()
+    if len(raw) > _MAX_WEBHOOK_BYTES:
+        raise HTTPException(413, "Payload too large.")
+    try:
+        payload = json.loads(raw) if raw else {}
+        if not isinstance(payload, dict):
+            payload = {"payload": payload}
+    except json.JSONDecodeError:
+        payload = {"raw": raw.decode("utf-8", errors="replace")}
+
+    background_tasks.add_task(_run_webhook_skill, name, hook["skill"], payload)
+    return {"status": "accepted", "webhook": name}
 
 
 # ── Data-quality demo (flagship FDE loop) ────────────────────────────────────

@@ -15,7 +15,7 @@ The headline capability is a data-quality repair loop, the same job a Palantir F
 
 On a deliberately broken two-table dataset (a CRM export and an ERP export that have to join), the quality score improved from 76 to 100, with 29 unrecoverable rows quarantined rather than dropped. Shelby also profiles and repairs arbitrary real single CSV files, and can pull public datasets from Kaggle to test against.
 
-Beyond the data loop, Shelby holds a conversation, searches the live web, remembers facts across sessions, writes and runs its own Python skills, schedules recurring jobs, speaks and listens, and connects to external services through MCP.
+Beyond the data loop, Shelby holds a conversation, searches the live web, remembers facts across sessions, writes and runs its own Python skills, schedules recurring jobs, speaks and listens, connects to external services through MCP, and can be triggered by incoming webhooks so an outside event runs one of its skills automatically.
 
 ## Evaluation results
 
@@ -34,7 +34,7 @@ Every example passes the gate (faithfulness and relevance at 1.00, conciseness a
 
 | Capability | Detail |
 |-----------|--------|
-| Tool use | 19 tools driven by Claude function calling |
+| Tool use | 22 tools driven by Claude function calling |
 | Data-quality loop | Inspect, repair, and score broken datasets |
 | Retrieval memory | ChromaDB vector store with chunked ingestion |
 | Persistent memory | Structured facts about the user, kept across sessions |
@@ -43,6 +43,7 @@ Every example passes the gate (faithfulness and relevance at 1.00, conciseness a
 | Scheduling | A heartbeat loop plus cron jobs through APScheduler |
 | Voice | Speech to text and text to speech with ElevenLabs |
 | MCP connectors | Connect Gmail, Notion, Apollo, and others by URL, at runtime or through config |
+| Webhooks | External events (a new file, a GitHub push) trigger a saved skill automatically |
 | Self-critique | Learns durable lessons from its own mistakes |
 | Model fallback | Falls back across models on rate limits and outages |
 | Interfaces | Web chat UI and a Telegram bot in one process |
@@ -74,7 +75,7 @@ python -m shelby.dataquality.demo
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/health` | Server health and connected MCP servers |
+| GET | `/health` | Server health, connected MCP servers, and registered webhook count |
 | POST | `/chat` | Chat with tool use, returns any files Shelby produced |
 | POST | `/chat/stream` | Streaming chat over server-sent events |
 | POST | `/inspect/upload` | Profile an uploaded CSV for data-quality issues |
@@ -82,6 +83,9 @@ python -m shelby.dataquality.demo
 | POST | `/rag/ingest` | Add documents to the knowledge base |
 | POST | `/rag/search` | Semantic search over the knowledge base |
 | GET/POST/DELETE | `/mcp` | List, connect, or remove MCP services by URL |
+| GET/POST | `/webhooks` | List or register incoming webhooks bound to a skill |
+| POST | `/webhooks/{name}` | Trigger a webhook, runs its bound skill in the background |
+| DELETE | `/webhooks/{name}` | Remove a webhook |
 
 Example chat request:
 
@@ -95,7 +99,7 @@ curl -X POST http://localhost:8000/chat \
 
 Shelby runs on Railway from a multi-stage Dockerfile that includes ffmpeg for voice. The FastAPI service serves the web UI and starts the Telegram bot as a background task in the same process. All writable state (memory, learned skills, usage, scheduled tasks, the vector store) lives under `SHELBY_DATA_DIR`, so mounting a Railway volume there keeps it across redeploys.
 
-Secrets are set as Railway environment variables and never committed: `ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`, `ELEVENLABS_API_KEY`, `TAVILY_API_KEY`, and optionally `KAGGLE_API_TOKEN` and the `LANGSMITH_*` and `SHELBY_MCP_*` variables. See `docs/MCP_SETUP.md` for connecting external services.
+Secrets are set as Railway environment variables and never committed: `ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`, `ELEVENLABS_API_KEY`, `TAVILY_API_KEY`, and optionally `KAGGLE_API_TOKEN`, the `LANGSMITH_*` and `SHELBY_MCP_*` variables, and `TELEGRAM_NOTIFY_CHAT_ID`. See `docs/MCP_SETUP.md` for connecting external services and `docs/WEBHOOKS.md` for incoming webhooks.
 
 ## Tech
 

@@ -4,7 +4,7 @@ A living record of what Shelby is, how it was built, and the problems solved alo
 
 Last updated: 2026-07-23.
 
-Shelby is a production AI agent built on the Claude API to demonstrate Forward-Deployed Engineering work: taking a real, messy problem and shipping an agent that solves it end to end. It runs as one deployed service that exposes a web chat interface and a Telegram bot, backed by tool use, retrieval-augmented memory, a data-quality repair loop, scheduling, voice, and MCP connectors. The package is about 4,300 lines of Python.
+Shelby is a production AI agent built on the Claude API to demonstrate Forward-Deployed Engineering work: taking a real, messy problem and shipping an agent that solves it end to end. It runs as one deployed service that exposes a web chat interface and a Telegram bot, backed by tool use, retrieval-augmented memory, a data-quality repair loop, scheduling, voice, MCP connectors, and incoming webhooks. The package is about 4,600 lines of Python.
 
 ## The story
 
@@ -43,6 +43,7 @@ It grew in deliberate phases, and each phase had to earn its place by making She
 | File delivery | File sending to Telegram and web | Delivers generated files safely |
 | External services | MCP connectors | Connects hosted services, by config or by URL at runtime |
 | Evaluation | LangSmith experiment | Faithfulness 1.00, relevance 1.00, conciseness 0.91 |
+| Automation | Incoming webhooks | External events (a file landing, a GitHub push) trigger a saved skill automatically |
 | Interface | Minimalist redesign | Clean light and dark themes, mobile responsive |
 
 ## Engineering problems solved
@@ -100,8 +101,8 @@ FastAPI service (uvicorn)
     Model fallback chain
     Tool-use loop (Claude function calling)
     Token and cost tracking
-    19 tools: web search, knowledge base, memory, skills,
-              scheduling, Kaggle, file delivery, MCP connectors,
+    22 tools: web search, knowledge base, memory, skills,
+              scheduling, Kaggle, file delivery, MCP connectors, webhooks,
               and the data-quality skills
 ```
 
@@ -109,7 +110,7 @@ FastAPI service (uvicorn)
 
 | # | Capability | Location |
 |---|-----------|----------|
-| 1 | Tool use, 19 tools through Claude function calling | `shelby/tools.py` |
+| 1 | Tool use, 22 tools through Claude function calling | `shelby/tools.py` |
 | 2 | Retrieval memory with ChromaDB | `shelby/rag/` |
 | 3 | FastAPI server, REST and streaming | `shelby/api/main.py` |
 | 4 | LangChain and LangSmith evaluations | `shelby/evals/` |
@@ -128,6 +129,7 @@ FastAPI service (uvicorn)
 | 17 | Self-critique that learns from mistakes | `shelby/selfcritique.py` |
 | 18 | Persistent state for volumes | `shelby/paths.py` |
 | 19 | MCP connectors, by config or by URL | `shelby/mcp/` |
+| 20 | Incoming webhooks, external events trigger a saved skill | `shelby/webhooks/` |
 
 ## Evaluation results
 
@@ -189,13 +191,14 @@ Secrets are set as Railway environment variables and never committed:
 | `SHELBY_DATA_DIR` | Base directory for persistent state, set to the volume mount |
 | `LANGSMITH_*` | LangSmith tracing and experiments (optional) |
 | `SHELBY_MCP_*` | Connect hosted MCP servers (optional). See `docs/MCP_SETUP.md` |
+| `TELEGRAM_NOTIFY_CHAT_ID` | Chat to notify when an incoming webhook fires (optional). See `docs/WEBHOOKS.md` |
 
 ## Repository layout
 
 ```
 shelby/
   agent.py         core agent loop, model fallback, system prompt
-  tools.py         19 tools and the dispatcher
+  tools.py         22 tools and the dispatcher
   scheduler.py     heartbeat and cron jobs
   usage_tracker.py token and cost accounting
   api/             FastAPI: main.py, models.py, static/index.html
@@ -204,6 +207,7 @@ shelby/
   memory/          structured key-value store
   skills/          dynamic skill registry
   mcp/             remote MCP connectors
+  webhooks/        incoming webhook registry
   telegram/        the Telegram bot
   tts/ stt/        ElevenLabs voice
   evals/           LangChain and LangSmith evaluations

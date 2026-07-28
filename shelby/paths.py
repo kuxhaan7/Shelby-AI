@@ -61,6 +61,11 @@ def mcp_file() -> Path:
     return _p("SHELBY_MCP_FILE", "mcp_servers.json")
 
 
+def webhooks_file() -> Path:
+    """Registry of incoming webhooks (via the create_webhook tool)."""
+    return _p("SHELBY_WEBHOOKS_FILE", "webhooks.json")
+
+
 def outbox_dir() -> Path:
     """Where generated files (e.g. cleaned CSVs) are written for delivery."""
     d = _p("SHELBY_OUTBOX_DIR", "outbox")

@@ -52,6 +52,9 @@ SYSTEM_PROMPT = """You are Shelby — a razor-sharp, highly capable AI assistant
 - connect_mcp      → connect any external service to yourself by its MCP URL (like adding a connector in Claude)
 - list_mcp         → list the external MCP services currently connected
 - disconnect_mcp   → disconnect a connected MCP service by name
+- create_webhook   → register an incoming webhook so an external event (a new file, a GitHub push, a cron host) can trigger a saved skill
+- list_webhooks    → list registered webhooks
+- delete_webhook   → remove a webhook by name
 - calculate        → math
 - get_current_time → current UTC time
 
@@ -102,6 +105,21 @@ turn. Use list_mcp to show what's connected and disconnect_mcp to remove one.
 When a service needs a token, ask the user for it, pass it to connect_mcp, and
 never repeat it back or expose it in your replies."""
 
+# Always appended: Shelby can create incoming webhooks bound to a skill.
+_WEBHOOK_PROMPT = """
+
+## INCOMING WEBHOOKS
+You can let an external system trigger your own skills by registering a
+webhook. If the user wants Shelby to react automatically to something outside
+this conversation (a new file landing, a GitHub push, a cron host, a form
+submission), first make sure the target skill exists (learn_skill if not),
+then call create_webhook with a name and that skill's name. It returns a
+trigger URL path and a secret — give the user that secret once and tell them
+it will not be shown again; they must send it as the X-Shelby-Secret header
+when they POST to the webhook. Use list_webhooks to show what's registered
+and delete_webhook to remove one. Never repeat a webhook secret back after
+the turn it was created in."""
+
 # Appended only when one or more MCP servers are currently connected.
 _MCP_ACTIVE_PROMPT = """
 
@@ -115,8 +133,8 @@ to do it manually. Confirm before anything destructive or externally visible
 
 
 def _system_prompt() -> str:
-    """System prompt, always advertising connect_mcp, plus a live server list."""
-    prompt = SYSTEM_PROMPT + _MCP_CONNECT_PROMPT
+    """System prompt, always advertising connect_mcp and create_webhook, plus a live server list."""
+    prompt = SYSTEM_PROMPT + _MCP_CONNECT_PROMPT + _WEBHOOK_PROMPT
     servers = describe_servers()
     if servers:
         prompt += _MCP_ACTIVE_PROMPT.format(servers=servers)
