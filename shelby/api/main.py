@@ -10,6 +10,7 @@ from typing import AsyncGenerator
 
 import json
 
+import anthropic
 from fastapi import BackgroundTasks, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -339,6 +340,26 @@ async def download(relpath: str):
 
 # ── Chat ─────────────────────────────────────────────────────────────────────
 
+def _agent_error_detail(exc: Exception) -> tuple[int, str]:
+    """Map an agent/Anthropic exception to (http_status, message) for a clean response.
+
+    Without this, any Claude API failure (bad key, exhausted rate limits across
+    the whole fallback chain, a network blip) bubbles up as an unhandled
+    exception and FastAPI turns it into a bare 500 with no explanation.
+    """
+    if isinstance(exc, anthropic.AuthenticationError):
+        return 502, "Claude API rejected the request: ANTHROPIC_API_KEY is missing or invalid."
+    if isinstance(exc, anthropic.PermissionDeniedError):
+        return 502, "Claude API denied the request — check the API key's permissions."
+    if isinstance(exc, anthropic.RateLimitError):
+        return 429, "Rate limited on every model in the fallback chain. Try again shortly."
+    if isinstance(exc, anthropic.APIStatusError):
+        return 502, f"Claude API error ({exc.status_code}): {getattr(exc, 'message', str(exc))}"
+    if isinstance(exc, anthropic.APIConnectionError):
+        return 502, "Could not reach the Claude API from the server."
+    return 500, f"Unexpected error: {exc}"
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     if agent is None:
@@ -349,9 +370,14 @@ async def chat(req: ChatRequest):
     messages = [m.model_dump() for m in req.messages]
     files: list[str] = []
     # Run synchronous agent in a thread so the event loop stays free
-    reply, usage = await run_in_threadpool(
-        lambda: agent.chat_with_usage(messages, collect_files=files)
-    )
+    try:
+        reply, usage = await run_in_threadpool(
+            lambda: agent.chat_with_usage(messages, collect_files=files)
+        )
+    except Exception as exc:
+        log.exception("Chat request failed")
+        status, detail = _agent_error_detail(exc)
+        raise HTTPException(status, detail)
 
     from ..paths import DATA_DIR
     base = DATA_DIR.resolve()
@@ -373,8 +399,13 @@ async def chat_stream(req: ChatRequest):
     messages = [m.model_dump() for m in req.messages]
 
     async def _gen() -> AsyncGenerator[str, None]:
-        for chunk in agent.stream(messages):
-            yield f"data: {chunk}\n\n"
+        try:
+            for chunk in agent.stream(messages):
+                yield f"data: {chunk}\n\n"
+        except Exception as exc:
+            log.exception("Streaming chat failed")
+            _, detail = _agent_error_detail(exc)
+            yield f"data: [ERROR] {detail}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(_gen(), media_type="text/event-stream")
