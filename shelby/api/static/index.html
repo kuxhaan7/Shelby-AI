@@ -42,7 +42,7 @@
   --binary: rgba(72, 235, 140, 0.11);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; }
+html, body { height: 100%; overflow-x: hidden; }
 
 /* ── Binary field background (green, theme-aware) ───────────── */
 #binary-bg { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none;
@@ -62,15 +62,18 @@ body {
 
 /* ── Header ─────────────────────────────────────────────────── */
 .header { display: flex; align-items: center; justify-content: space-between;
-  padding: 0 20px; height: 58px; flex-shrink: 0; border-bottom: 1px solid var(--border); }
-.hl { display: flex; align-items: center; gap: 11px; }
-.logo-mark { width: 22px; height: 22px; color: var(--fg); }
-.brand { font-family: var(--display); font-weight: 700; font-size: 16px; letter-spacing: 2px; }
-.status { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); letter-spacing: .5px; }
-.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
-.hbtns { display: flex; align-items: center; gap: 4px; }
+  padding: 0 20px; height: 58px; flex-shrink: 0; border-bottom: 1px solid var(--border);
+  min-width: 0; }
+.hl { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.logo-mark { width: 22px; height: 22px; color: var(--fg); flex-shrink: 0; }
+.brand { font-family: var(--display); font-weight: 700; font-size: 16px; letter-spacing: 2px; white-space: nowrap; }
+.status { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); letter-spacing: .5px; white-space: nowrap; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
+.hbtns { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .hbtn { font-family: var(--mono); background: none; border: 1px solid transparent; color: var(--muted);
-  font-size: 12px; letter-spacing: .3px; padding: 6px 10px; border-radius: 7px; cursor: pointer; transition: all .14s; }
+  font-size: 12px; letter-spacing: .3px; padding: 6px 10px; border-radius: 7px; cursor: pointer;
+  transition: all .14s; white-space: nowrap; }
+.hbtn .short { display: none; }
 .hbtn:hover { color: var(--fg); background: var(--surface); }
 .hbtn.primary { color: var(--fg); border-color: var(--border); }
 .hbtn.primary:hover { border-color: var(--faint); }
@@ -223,6 +226,8 @@ body {
   #clear-btn { display: none; }
   .brand { letter-spacing: 1.5px; }
   .hbtn { padding: 6px 6px; font-size: 11px; }
+  .hbtn .full { display: none; }
+  .hbtn .short { display: inline; }
 }
 </style>
 </head>
@@ -241,8 +246,8 @@ body {
       <div class="status"><span class="dot"></span>online</div>
     </div>
     <div class="hbtns">
-      <button id="mcp-btn" class="hbtn label">Connectors</button>
-      <button id="demo-btn" class="hbtn label primary">Data-QC demo</button>
+      <button id="mcp-btn" class="hbtn label"><span class="full">Connectors</span><span class="short">Connect</span></button>
+      <button id="demo-btn" class="hbtn label primary"><span class="full">Data-QC demo</span><span class="short">Demo</span></button>
       <button id="clear-btn" class="hbtn label">Clear</button>
       <button id="theme-btn" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">
         <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
