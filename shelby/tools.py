@@ -321,6 +321,43 @@ TOOL_SCHEMAS = [
             "required": ["name"],
         },
     },
+    {
+        "name": "check_schema_drift",
+        "description": (
+            "Check a real CSV file's column structure against a remembered baseline, and "
+            "report what changed: columns added, columns removed, or a column's inferred "
+            "type flipping (e.g. numeric to text). The first time you check a given name, "
+            "there's no baseline yet — it saves the current schema as the baseline and "
+            "reports no drift. Every later check compares against it. Use this on a "
+            "recurring export (especially one bound to a webhook) so a broken upstream "
+            "change gets flagged before anyone notices bad data, instead of after."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Path to the real CSV file to check."},
+                "name": {"type": "string", "description": "Identifier for this recurring dataset, e.g. 'weekly-customers'. Defaults to the filename if omitted."},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "list_schema_baselines",
+        "description": "List every dataset name Shelby is tracking for schema drift, and how many columns each baseline has.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "reset_schema_baseline",
+        "description": "Reset a schema baseline to match a file's current structure — use this after a schema change was expected and approved, so it stops being reported as drift.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Path to the real CSV file whose current schema becomes the new baseline."},
+                "name": {"type": "string", "description": "Identifier for the dataset. Defaults to the filename if omitted."},
+            },
+            "required": ["path"],
+        },
+    },
 ]
 
 
@@ -583,6 +620,58 @@ def delete_webhook(args: dict) -> str:
     return f"Webhook '{result['name']}' removed."
 
 
+def check_schema_drift(args: dict) -> str:
+    from .dataquality import drift
+    path = (args.get("path") or "").strip()
+    if not path:
+        return "No path provided."
+    p = Path(path)
+    if not p.exists() or not p.is_file():
+        return f"No file found at {path}."
+    try:
+        result = drift.check(args.get("name", ""), p)
+    except Exception as exc:
+        return f"Could not check schema drift: {exc}"
+
+    if result["first_run"]:
+        return (
+            f"No baseline existed for '{result['name']}' — saved the current schema as "
+            f"the baseline ({len(result['columns'])} columns: {', '.join(result['columns'])}). "
+            f"Future checks against this name will report drift against it."
+        )
+    if not result["drifted"]:
+        return f"No schema drift for '{result['name']}' — {len(result['columns'])} columns, unchanged."
+
+    lines = [f"Schema drift detected for '{result['name']}':"]
+    if result["added"]:
+        lines.append(f"  added columns: {', '.join(result['added'])}")
+    if result["removed"]:
+        lines.append(f"  removed columns: {', '.join(result['removed'])}")
+    for tc in result["type_changed"]:
+        lines.append(f"  '{tc['column']}' type changed: {tc['was']} -> {tc['now']}")
+    return "\n".join(lines)
+
+
+def list_schema_baselines(_: dict) -> str:
+    from .dataquality import drift
+    baselines = drift.list_baselines()
+    if not baselines:
+        return "No schema baselines saved yet. Run check_schema_drift on a file to create one."
+    return "\n".join(f"• {b['name']} — {len(b['columns'])} columns" for b in baselines)
+
+
+def reset_schema_baseline(args: dict) -> str:
+    from .dataquality import drift
+    path = (args.get("path") or "").strip()
+    if not path:
+        return "No path provided."
+    p = Path(path)
+    if not p.exists() or not p.is_file():
+        return f"No file found at {path}."
+    result = drift.update_baseline(args.get("name", ""), p)
+    return f"Baseline for '{result['name']}' reset to the current schema ({len(result['columns'])} columns)."
+
+
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
 def dispatch(
@@ -639,5 +728,11 @@ def dispatch(
             return list_webhooks(tool_input)
         case "delete_webhook":
             return delete_webhook(tool_input)
+        case "check_schema_drift":
+            return check_schema_drift(tool_input)
+        case "list_schema_baselines":
+            return list_schema_baselines(tool_input)
+        case "reset_schema_baseline":
+            return reset_schema_baseline(tool_input)
         case _:
             return f"Unknown tool: {tool_name}"

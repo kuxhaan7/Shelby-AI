@@ -45,6 +45,7 @@ It grew in deliberate phases, and each phase had to earn its place by making She
 | Evaluation | LangSmith experiment | Faithfulness 1.00, relevance 1.00, conciseness 0.91 |
 | Automation | Incoming webhooks | External events (a file landing, a GitHub push) trigger a saved skill automatically |
 | Interface | Minimalist redesign | Clean light and dark themes, mobile responsive |
+| Automation | Schema drift detection | A recurring export is checked against a remembered baseline; column changes are flagged before they break anything |
 
 ## Engineering problems solved
 
@@ -101,8 +102,8 @@ FastAPI service (uvicorn)
     Model fallback chain
     Tool-use loop (Claude function calling)
     Token and cost tracking
-    22 tools: web search, knowledge base, memory, skills,
-              scheduling, Kaggle, file delivery, MCP connectors, webhooks,
+    25 tools: web search, knowledge base, memory, skills,
+              scheduling, Kaggle, file delivery, MCP connectors, webhooks, drift detection,
               and the data-quality skills
 ```
 
@@ -110,7 +111,7 @@ FastAPI service (uvicorn)
 
 | # | Capability | Location |
 |---|-----------|----------|
-| 1 | Tool use, 22 tools through Claude function calling | `shelby/tools.py` |
+| 1 | Tool use, 25 tools through Claude function calling | `shelby/tools.py` |
 | 2 | Retrieval memory with ChromaDB | `shelby/rag/` |
 | 3 | FastAPI server, REST and streaming | `shelby/api/main.py` |
 | 4 | LangChain and LangSmith evaluations | `shelby/evals/` |
@@ -130,6 +131,7 @@ FastAPI service (uvicorn)
 | 18 | Persistent state for volumes | `shelby/paths.py` |
 | 19 | MCP connectors, by config or by URL | `shelby/mcp/` |
 | 20 | Incoming webhooks, external events trigger a saved skill | `shelby/webhooks/` |
+| 21 | Schema drift detection for recurring datasets | `shelby/dataquality/drift.py` |
 
 ## Evaluation results
 
@@ -173,6 +175,12 @@ The result is a quality score of 76 improving to 100, with 29 unrecoverable rows
 python -m shelby.dataquality.demo
 ```
 
+### Schema drift detection
+
+A one-off cleanup is useful, but the real FDE problem is a dataset that arrives over and over, and quietly changes shape underneath you. `shelby/dataquality/drift.py` fingerprints a CSV's columns and a coarse inferred type per column (numeric, date, or text), and remembers that fingerprint under a name. The first check saves the baseline; every check after that diffs the current file against it and reports exactly what changed: columns added, columns removed, or a column's type flipping.
+
+This is what makes the webhook feature into an actual pipeline rather than a one-shot trigger: bind `check_schema_drift` to a webhook on a recurring export, and Shelby flags a broken upstream schema change the moment the next file lands, before anyone downstream notices bad data. `reset_schema_baseline` approves an intentional change so it stops being reported.
+
 ## Deployment
 
 Shelby runs on Railway from a pinned multi-stage Dockerfile that includes ffmpeg for voice. The FastAPI service serves the web interface and starts the Telegram bot as a background task in the same process.
@@ -198,7 +206,7 @@ Secrets are set as Railway environment variables and never committed:
 ```
 shelby/
   agent.py         core agent loop, model fallback, system prompt
-  tools.py         22 tools and the dispatcher
+  tools.py         25 tools and the dispatcher
   scheduler.py     heartbeat and cron jobs
   usage_tracker.py token and cost accounting
   api/             FastAPI: main.py, models.py, static/index.html

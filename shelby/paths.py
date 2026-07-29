@@ -66,6 +66,11 @@ def webhooks_file() -> Path:
     return _p("SHELBY_WEBHOOKS_FILE", "webhooks.json")
 
 
+def schema_baselines_file() -> Path:
+    """Saved schema fingerprints, keyed by name, for drift detection."""
+    return _p("SHELBY_SCHEMA_BASELINES_FILE", "schema_baselines.json")
+
+
 def outbox_dir() -> Path:
     """Where generated files (e.g. cleaned CSVs) are written for delivery."""
     d = _p("SHELBY_OUTBOX_DIR", "outbox")

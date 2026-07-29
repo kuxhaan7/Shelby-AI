@@ -15,6 +15,8 @@ The headline capability is a data-quality repair loop, the same job a Palantir F
 
 On a deliberately broken two-table dataset (a CRM export and an ERP export that have to join), the quality score improved from 76 to 100, with 29 unrecoverable rows quarantined rather than dropped. Shelby also profiles and repairs arbitrary real single CSV files, and can pull public datasets from Kaggle to test against.
 
+For a dataset that arrives repeatedly rather than once, Shelby remembers its column structure and flags schema drift: columns added, removed, or a column's type changing between one export and the next. Bound to a webhook, this turns a one-off cleanup into an ongoing pipeline that catches a broken upstream change the moment it lands.
+
 Beyond the data loop, Shelby holds a conversation, searches the live web, remembers facts across sessions, writes and runs its own Python skills, schedules recurring jobs, speaks and listens, connects to external services through MCP, and can be triggered by incoming webhooks so an outside event runs one of its skills automatically.
 
 ## Evaluation results
@@ -34,7 +36,7 @@ Every example passes the gate (faithfulness and relevance at 1.00, conciseness a
 
 | Capability | Detail |
 |-----------|--------|
-| Tool use | 22 tools driven by Claude function calling |
+| Tool use | 25 tools driven by Claude function calling |
 | Data-quality loop | Inspect, repair, and score broken datasets |
 | Retrieval memory | ChromaDB vector store with chunked ingestion |
 | Persistent memory | Structured facts about the user, kept across sessions |
@@ -44,6 +46,7 @@ Every example passes the gate (faithfulness and relevance at 1.00, conciseness a
 | Voice | Speech to text and text to speech with ElevenLabs |
 | MCP connectors | Connect Gmail, Notion, Apollo, and others by URL, at runtime or through config |
 | Webhooks | External events (a new file, a GitHub push) trigger a saved skill automatically |
+| Schema drift | Flags added, removed, or retyped columns on a recurring dataset |
 | Self-critique | Learns durable lessons from its own mistakes |
 | Model fallback | Falls back across models on rate limits and outages |
 | Interfaces | Web chat UI and a Telegram bot in one process |
