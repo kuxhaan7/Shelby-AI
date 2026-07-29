@@ -58,7 +58,7 @@ body {
   -webkit-font-smoothing: antialiased;
   transition: background .25s ease, color .25s ease;
 }
-#app { display: flex; flex-direction: column; height: 100vh; max-width: 780px; margin: 0 auto; }
+#app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; max-width: 780px; margin: 0 auto; }
 
 /* ── Header ─────────────────────────────────────────────────── */
 .header { display: flex; align-items: center; justify-content: space-between;
@@ -153,7 +153,7 @@ body {
 .iobtn.rec { color: var(--danger); }
 @keyframes recpulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
 .iobtn.rec { animation: recpulse 1s ease-in-out infinite; }
-#input { flex: 1; background: none; border: none; color: var(--fg); font-family: var(--mono); font-size: 14.5px;
+#input { flex: 1; background: none; border: none; color: var(--fg); font-family: var(--mono); font-size: 16px;
   line-height: 1.55; padding: 8px 4px; resize: none; outline: none; min-height: 36px; max-height: 130px; }
 #input::placeholder { color: var(--faint); }
 #send { background: var(--accent); color: var(--accent-fg); }
@@ -197,7 +197,7 @@ body {
 .mcp-form { border-top: 1px solid var(--border); padding-top: 18px; }
 .mcp-fields { display: flex; flex-wrap: wrap; gap: 9px; margin-bottom: 13px; }
 .mcp-in { flex: 1 1 150px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; color: var(--fg);
-  font-family: var(--mono); font-size: 13px; padding: 10px 12px; outline: none; transition: border-color .14s; }
+  font-family: var(--mono); font-size: 16px; padding: 10px 12px; outline: none; transition: border-color .14s; }
 .mcp-in.wide { flex-basis: 100%; }
 .mcp-in:focus { border-color: var(--faint); }
 .mcp-in::placeholder { color: var(--faint); }
@@ -309,7 +309,11 @@ function spring(el){ if(el) el.classList.add('enter'); }
     const rows=Math.ceil(window.innerHeight/20)+2;
     el.textContent='01 '.repeat(perRow*rows);
   };
-  fit(); let t; window.addEventListener('resize',()=>{clearTimeout(t);t=setTimeout(fit,150);});
+  fit(); let t; const refit=()=>{clearTimeout(t);t=setTimeout(fit,150);};
+  window.addEventListener('resize',refit);
+  // visualViewport catches on-screen-keyboard-driven size changes on mobile,
+  // which don't always fire a plain window 'resize' event.
+  if (window.visualViewport) window.visualViewport.addEventListener('resize',refit);
 })();
 
 /* Theme (white / black), persisted. */
