@@ -17,7 +17,7 @@ _TASKS_FILE = tasks_file()
 _DATA_DIR = _TASKS_FILE.parent
 
 # Heartbeat interval in minutes
-_HEARTBEAT_MINUTES = 30
+_HEARTBEAT_MINUTES = 180
 
 
 class TaskScheduler:
