@@ -53,10 +53,12 @@ Set `TELEGRAM_NOTIFY_CHAT_ID` to have Shelby message you on Telegram every
 time a webhook runs, with the skill's result. To find your chat id, message
 the bot `/id` and it replies with the number to use.
 
-This is the same variable that drives the scheduler's heartbeat check-in
-(see `shelby/scheduler.py`). Set it once and both features push to that
-chat. Without it, webhooks and the heartbeat still run normally, you just
-won't get a message; check `/webhooks` or the server logs instead.
+This is the same variable that drives the scheduler's heartbeat check-in and
+every `schedule_task` cron job's result (see `shelby/scheduler.py`). A cron
+job that fails also pushes here, so a broken schedule doesn't fail silently.
+Set it once and all three push to that chat. Without it, webhooks and
+scheduled tasks still run normally, you just won't get a message; check
+`/webhooks`, `list_tasks`, or the server logs instead.
 
 ```
 TELEGRAM_NOTIFY_CHAT_ID=123456789

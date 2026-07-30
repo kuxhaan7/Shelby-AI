@@ -199,7 +199,7 @@ Secrets are set as Railway environment variables and never committed:
 | `SHELBY_DATA_DIR` | Base directory for persistent state, set to the volume mount |
 | `LANGSMITH_*` | LangSmith tracing and experiments (optional) |
 | `SHELBY_MCP_*` | Connect hosted MCP servers (optional). See `docs/MCP_SETUP.md` |
-| `TELEGRAM_NOTIFY_CHAT_ID` | Chat Shelby proactively messages: an incoming webhook firing, and the heartbeat check-in (optional). See `docs/WEBHOOKS.md` |
+| `TELEGRAM_NOTIFY_CHAT_ID` | Chat Shelby proactively messages: an incoming webhook firing, a scheduled task's result (or failure), and the heartbeat check-in (optional). See `docs/WEBHOOKS.md` |
 
 ## Repository layout
 

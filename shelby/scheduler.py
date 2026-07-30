@@ -64,11 +64,14 @@ class TaskScheduler:
 
         def _run() -> None:
             log.info("Running scheduled task '%s' → skill '%s'", name, skill_name)
+            from .notify import notify_telegram
             try:
                 result = registry.run(skill_name, kwargs) if registry else "No skill registry."
                 log.info("Task '%s' result: %s", name, str(result)[:200])
+                notify_telegram(f"Scheduled task '{name}' ran.\n\n{result}")
             except Exception as exc:
                 log.error("Task '%s' failed: %s", name, exc)
+                notify_telegram(f"Scheduled task '{name}' failed: {exc}")
 
         self._sched.add_job(_run, trigger=trigger, id=name, replace_existing=True)
         self._tasks[name] = {"cron": cron, "skill": skill_name, "kwargs": kwargs}
