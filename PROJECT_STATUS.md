@@ -34,7 +34,7 @@ It grew in deliberate phases, and each phase had to earn its place by making She
 | Autonomy | Self-writing memory and dynamic skills | Shelby learns and remembers |
 | Reliability | Model fallback chain | Survives rate limits and outages |
 | Reliability | Token and cost tracking | Every call accounted for |
-| Reliability | Heartbeat and cron scheduling | Runs on its own schedule |
+| Reliability | Heartbeat and cron scheduling | Runs on its own schedule, and pushes a Telegram check-in every 30 minutes when TELEGRAM_NOTIFY_CHAT_ID is set |
 | Flagship | Data-quality repair loop | Quality score 76 to 100 on broken data |
 | Showcase | Public web chat interface | Anyone can try it live |
 | Showcase | In-app data-quality scorecard | One click renders a before-and-after result |
@@ -199,7 +199,7 @@ Secrets are set as Railway environment variables and never committed:
 | `SHELBY_DATA_DIR` | Base directory for persistent state, set to the volume mount |
 | `LANGSMITH_*` | LangSmith tracing and experiments (optional) |
 | `SHELBY_MCP_*` | Connect hosted MCP servers (optional). See `docs/MCP_SETUP.md` |
-| `TELEGRAM_NOTIFY_CHAT_ID` | Chat to notify when an incoming webhook fires (optional). See `docs/WEBHOOKS.md` |
+| `TELEGRAM_NOTIFY_CHAT_ID` | Chat Shelby proactively messages: an incoming webhook firing, and the heartbeat check-in (optional). See `docs/WEBHOOKS.md` |
 
 ## Repository layout
 

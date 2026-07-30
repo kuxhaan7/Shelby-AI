@@ -188,32 +188,16 @@ async def webhooks_delete(name: str):
     return result
 
 
-def _notify_telegram(text: str) -> None:
-    """Best-effort push of *text* to a configured Telegram chat. No-ops if unset."""
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat_id = os.getenv("TELEGRAM_NOTIFY_CHAT_ID")
-    if not token or not chat_id:
-        return
-    try:
-        import httpx
-        httpx.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": text[:4000]},
-            timeout=10,
-        )
-    except Exception:
-        log.exception("Failed to push webhook notification to Telegram")
-
-
 def _run_webhook_skill(name: str, skill_name: str, payload: dict) -> None:
     """Runs in the background after a webhook is accepted; never blocks the request."""
+    from ..notify import notify_telegram
     try:
         result = agent._skills.run(skill_name, payload)
     except Exception as exc:
         result = f"Webhook '{name}' -> skill '{skill_name}' raised: {exc}"
         log.error(result)
     log.info("Webhook '%s' ran skill '%s': %s", name, skill_name, str(result)[:300])
-    _notify_telegram(f"Webhook '{name}' fired.\n\n{result}")
+    notify_telegram(f"Webhook '{name}' fired.\n\n{result}")
 
 
 @app.post("/webhooks/{name}")

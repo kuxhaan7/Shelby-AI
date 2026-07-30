@@ -108,9 +108,12 @@ class TaskScheduler:
 
     def _add_heartbeat(self) -> None:
         def _beat() -> None:
-            log.info(
-                "Shelby heartbeat — alive, %d user task(s) scheduled",
-                len(self._tasks),
+            n = len(self._tasks)
+            log.info("Shelby heartbeat — alive, %d user task(s) scheduled", n)
+            from .notify import notify_telegram
+            notify_telegram(
+                f"Shelby heartbeat: alive, {n} scheduled task(s) running."
+                if n else "Shelby heartbeat: alive."
             )
 
         self._sched.add_job(
