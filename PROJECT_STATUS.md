@@ -45,6 +45,8 @@ It grew in deliberate phases, and each phase had to earn its place by making She
 | Evaluation | LangSmith experiment | Faithfulness 1.00, relevance 1.00, conciseness 0.91 |
 | Automation | Incoming webhooks | External events (a file landing, a GitHub push) trigger a saved skill automatically |
 | Interface | Minimalist redesign | Clean light and dark themes, mobile responsive |
+| Interface | Admin panel | One view of memory, skills, tasks, webhooks, MCP connections, and usage/cost |
+| Interface | Knowledge base graph | Obsidian-style node-link view of the RAG store, connected by embedding similarity |
 | Automation | Schema drift detection | A recurring export is checked against a remembered baseline; column changes are flagged before they break anything |
 
 ## Engineering problems solved
@@ -132,6 +134,7 @@ FastAPI service (uvicorn)
 | 19 | MCP connectors, by config or by URL | `shelby/mcp/` |
 | 20 | Incoming webhooks, external events trigger a saved skill | `shelby/webhooks/` |
 | 21 | Schema drift detection for recurring datasets | `shelby/dataquality/drift.py` |
+| 22 | Admin panel with a knowledge base graph view | `/admin/overview`, `/admin/graph` in `shelby/api/main.py` |
 
 ## Evaluation results
 
@@ -180,6 +183,12 @@ python -m shelby.dataquality.demo
 A one-off cleanup is useful, but the real FDE problem is a dataset that arrives over and over, and quietly changes shape underneath you. `shelby/dataquality/drift.py` fingerprints a CSV's columns and a coarse inferred type per column (numeric, date, or text), and remembers that fingerprint under a name. The first check saves the baseline; every check after that diffs the current file against it and reports exactly what changed: columns added, columns removed, or a column's type flipping.
 
 This is what makes the webhook feature into an actual pipeline rather than a one-shot trigger: bind `check_schema_drift` to a webhook on a recurring export, and Shelby flags a broken upstream schema change the moment the next file lands, before anyone downstream notices bad data. `reset_schema_baseline` approves an intentional change so it stops being reported.
+
+## Admin panel
+
+The web UI's Admin button opens a single view of everything Shelby has persisted: structured memory, learned skills, scheduled tasks, webhooks, MCP connections, tracked schema baselines, and token usage with estimated cost. It reads from the same stores covered above, nothing new to maintain, just one place to see all of it instead of asking Shelby piece by piece.
+
+The second tab is a knowledge base graph: every passage in the RAG store becomes a node, connected to its most similar neighbors by embedding cosine similarity, the same shape as an Obsidian graph view except the links are computed rather than authored. It runs as a small hand-written force simulation on canvas (no charting library), with pan, zoom, draggable nodes, and a hover tooltip showing the full passage and its source. `RagStore.graph_data()` builds the node-link structure server side; `GET /admin/graph` serves it.
 
 ## Deployment
 

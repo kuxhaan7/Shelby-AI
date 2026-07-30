@@ -241,7 +241,50 @@ async def webhooks_trigger(
     return {"status": "accepted", "webhook": name}
 
 
-# ── Data-quality demo (flagship FDE loop) ────────────────────────────────────
+# ── Admin ────────────────────────────────────────────────────────────────────
+
+@app.get("/admin/overview")
+async def admin_overview():
+    """Everything Shelby has persisted, in one place: memory, skills, tasks,
+    webhooks, MCP connections, schema baselines, and usage/cost."""
+    if agent is None:
+        raise HTTPException(503, "Agent not ready")
+
+    from .. import usage_tracker
+    from ..dataquality import drift
+    from ..mcp import list_servers
+    from ..webhooks import registry as webhook_registry
+
+    def _rows():
+        stats = usage_tracker.get_stats()
+        return {
+            "memory": agent._notes.as_list(),
+            "skills": agent._skills.list(),
+            "tasks": agent._scheduler.list_tasks() if agent._scheduler else [],
+            "webhooks": webhook_registry.list_webhooks(),
+            "mcp_servers": list_servers(),
+            "schema_baselines": drift.list_baselines(),
+            "usage": {
+                "total_calls": stats.get("total_calls", 0),
+                "total_input_tokens": stats.get("total_input", 0),
+                "total_output_tokens": stats.get("total_output", 0),
+                "estimated_cost_usd": usage_tracker.estimated_cost_usd(stats),
+                "by_model": stats.get("by_model", {}),
+            },
+            "rag_docs": rag_store.count() if rag_store else 0,
+        }
+
+    return await run_in_threadpool(_rows)
+
+
+@app.get("/admin/graph")
+async def admin_graph():
+    """Node-link graph of the knowledge base: passages connected by semantic
+    similarity, the same shape as an Obsidian graph view but computed from
+    embeddings instead of authored links."""
+    if rag_store is None:
+        raise HTTPException(503, "Knowledge base not ready")
+    return await run_in_threadpool(rag_store.graph_data)
 
 @app.get("/demo/dataquality")
 async def demo_dataquality():

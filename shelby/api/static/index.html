@@ -204,6 +204,41 @@ body {
 .mcp-msg { font-size: 12px; margin-top: 11px; min-height: 15px; }
 .mcp-msg.ok { color: var(--ok); } .mcp-msg.err { color: var(--danger); }
 
+/* ── Admin panel ────────────────────────────────────────────── */
+.modal-card.wide { width: min(880px, 100%); max-height: 88vh; display: flex; flex-direction: column; }
+.admin-tabs { display: flex; gap: 6px; margin: 14px 0 16px; border-bottom: 1px solid var(--border); }
+.admin-tab { font-family: var(--mono); background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--muted); font-size: 12.5px; padding: 8px 4px; margin-bottom: -1px; cursor: pointer; transition: all .14s; }
+.admin-tab:hover { color: var(--fg); }
+.admin-tab.active { color: var(--fg); border-bottom-color: var(--accent); }
+.admin-body { flex: 1; min-height: 0; overflow-y: auto; }
+.admin-body::-webkit-scrollbar { width: 8px; } .admin-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.admin-view[hidden] { display: none; }
+.admin-section { margin-bottom: 22px; }
+.admin-section h4 { font-family: var(--display); font-size: 12px; font-weight: 600; letter-spacing: .8px;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 9px; }
+.admin-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--border);
+  border-radius: 9px; background: var(--surface); font-size: 12.5px; margin-bottom: 6px; }
+.admin-row .ar-main { flex: 1; min-width: 0; }
+.admin-row .ar-k { font-weight: 600; color: var(--fg); }
+.admin-row { flex-wrap: wrap; }
+.admin-row .ar-v { color: var(--muted); }
+.admin-row .ar-v.trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.admin-row .ar-meta { font-size: 10.5px; color: var(--faint); flex-shrink: 0; }
+.admin-stats { display: flex; flex-wrap: wrap; gap: 22px; margin-bottom: 4px; }
+.admin-stats div { font-size: 11px; color: var(--muted); }
+.admin-stats span { display: block; font-family: var(--display); font-size: 19px; color: var(--fg); margin-bottom: 2px; }
+.admin-empty { font-size: 12px; color: var(--muted); padding: 10px 12px; border: 1px dashed var(--border); border-radius: 9px; }
+.graph-wrap { position: relative; height: min(60vh, 520px); border: 1px solid var(--border); border-radius: 12px;
+  overflow: hidden; background: var(--surface); }
+#admin-canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+#admin-canvas.dragging { cursor: grabbing; }
+.graph-tip { position: absolute; pointer-events: none; max-width: 240px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; font-size: 11.5px; line-height: 1.5; box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  opacity: 0; transition: opacity .1s; z-index: 2; }
+.graph-tip .gt-src { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .5px; margin-top: 3px; }
+.graph-hint { font-size: 10.5px; color: var(--faint); margin-top: 8px; text-align: center; }
+
 @media (max-width: 640px) {
   .header { padding: 0 12px; height: 54px; }
   .status { display: none; }
@@ -219,6 +254,9 @@ body {
   .hint { font-size: 10px; }
   .modal-card { padding: 18px 16px; border-radius: 14px; }
   .row { grid-template-columns: 92px 1fr 30px; gap: 9px; }
+  .modal-card.wide { max-height: 92vh; }
+  .graph-wrap { height: 46vh; }
+  .admin-stats { gap: 14px; }
 }
 /* Very narrow phones: keep the two key actions, drop the least-used label. */
 @media (max-width: 430px) {
@@ -246,6 +284,7 @@ body {
       <div class="status"><span class="dot"></span>online</div>
     </div>
     <div class="hbtns">
+      <button id="admin-btn" class="hbtn label">Admin</button>
       <button id="mcp-btn" class="hbtn label"><span class="full">Connectors</span><span class="short">Connect</span></button>
       <button id="demo-btn" class="hbtn label primary"><span class="full">Data-QC demo</span><span class="short">Demo</span></button>
       <button id="clear-btn" class="hbtn label">Clear</button>
@@ -294,6 +333,30 @@ body {
       <button type="submit" id="mcp-add" class="hbtn primary">Connect</button>
       <div id="mcp-msg" class="mcp-msg"></div>
     </form>
+  </div>
+</div>
+
+<!-- ── Admin panel ───────────────────────────────────────────────── -->
+<div id="admin-modal" class="modal" hidden>
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <div class="modal-title">Admin</div>
+      <button id="admin-close" class="modal-x" aria-label="Close">✕</button>
+    </div>
+    <div class="admin-tabs">
+      <button class="admin-tab active" data-view="overview">Overview</button>
+      <button class="admin-tab" data-view="graph">Memory graph</button>
+    </div>
+    <div class="admin-body">
+      <div id="admin-view-overview" class="admin-view"></div>
+      <div id="admin-view-graph" class="admin-view" hidden>
+        <div class="graph-wrap">
+          <canvas id="admin-canvas"></canvas>
+          <div id="graph-tip" class="graph-tip"></div>
+        </div>
+        <div class="graph-hint">Drag to pan · scroll to zoom · drag a node to move it · hover for detail</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -547,6 +610,257 @@ document.getElementById('mcp-btn').onclick=mcpOpen;
 document.getElementById('mcp-close').onclick=mcpCloseFn;
 mcpModal.addEventListener('click',e=>{if(e.target===mcpModal)mcpCloseFn();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!mcpModal.hidden)mcpCloseFn();});
+
+/* ── Admin panel ────────────────────────────────────────────── */
+const adminModal=document.getElementById('admin-modal');
+const adminOverviewEl=document.getElementById('admin-view-overview');
+const adminGraphEl=document.getElementById('admin-view-graph');
+let graphSim=null;
+
+function adminRow(k,v,meta,trunc){
+  const vHtml=v!=null
+    ? ` <span class="ar-v${trunc?' trunc':''}"${trunc?` title="${esc(String(v))}"`:''}>${esc(String(v))}</span>`
+    : '';
+  return `<div class="admin-row"><div class="ar-main"><span class="ar-k">${esc(k)}</span>${vHtml}</div>`+
+    (meta?`<span class="ar-meta">${esc(meta)}</span>`:'')+`</div>`;
+}
+function adminEmpty(msg){return `<div class="admin-empty">${esc(msg)}</div>`;}
+function adminSection(title,html){return `<div class="admin-section"><h4>${esc(title)}</h4>${html}</div>`;}
+
+function renderOverview(d){
+  const memory=(d.memory||[]).length
+    ? d.memory.map(m=>adminRow(m.key,m.value,m.updated_at?new Date(m.updated_at).toLocaleDateString():'')).join('')
+    : adminEmpty('No memory saved yet.');
+  const skills=(d.skills||[]).length
+    ? d.skills.map(s=>adminRow(s.name,s.description)).join('')
+    : adminEmpty('No skills learned yet.');
+  const tasks=(d.tasks||[]).length
+    ? d.tasks.map(t=>adminRow(t.name,`${t.cron} → ${t.skill}`,t.next_run)).join('')
+    : adminEmpty('No scheduled tasks.');
+  const webhooks=(d.webhooks||[]).length
+    ? d.webhooks.map(w=>adminRow(w.name,`runs ${w.skill}`)).join('')
+    : adminEmpty('No webhooks registered.');
+  const mcp=(d.mcp_servers||[]).length
+    ? d.mcp_servers.map(m=>adminRow(m.name,m.url,m.authenticated?'authenticated':'no-auth',true)).join('')
+    : adminEmpty('No MCP services connected.');
+  const schemas=(d.schema_baselines||[]).length
+    ? d.schema_baselines.map(s=>adminRow(s.name,`${s.columns.length} columns`)).join('')
+    : adminEmpty('No schema baselines tracked.');
+  const u=d.usage||{};
+  const stats=`<div class="admin-stats">
+      <div><span>${(u.total_calls||0).toLocaleString()}</span>API calls</div>
+      <div><span>${((u.total_input_tokens||0)+(u.total_output_tokens||0)).toLocaleString()}</span>tokens</div>
+      <div><span>$${(u.estimated_cost_usd||0).toFixed(4)}</span>est. cost</div>
+      <div><span>${d.rag_docs||0}</span>knowledge base entries</div>
+    </div>`;
+
+  adminOverviewEl.innerHTML=
+    adminSection('Usage',stats)+
+    adminSection('Memory',memory)+
+    adminSection('Skills',skills)+
+    adminSection('Scheduled tasks',tasks)+
+    adminSection('Webhooks',webhooks)+
+    adminSection('MCP connections',mcp)+
+    adminSection('Schema baselines',schemas);
+}
+
+async function loadOverview(){
+  adminOverviewEl.innerHTML=adminEmpty('loading…');
+  try{
+    const r=await fetch('/admin/overview');
+    if(!r.ok)throw new Error(`${r.status}`);
+    renderOverview(await r.json());
+  }catch(e){adminOverviewEl.innerHTML=adminEmpty('could not load: '+String(e));}
+}
+
+/* Force-directed graph on canvas — Obsidian-style. No external deps. */
+function initGraphSim(canvas,tipEl,data){
+  const ctx=canvas.getContext('2d');
+  const nodes=(data.nodes||[]).map(n=>({...n,x:(Math.random()-0.5)*300,y:(Math.random()-0.5)*300,vx:0,vy:0}));
+  const byId=Object.fromEntries(nodes.map(n=>[n.id,n]));
+  const edges=(data.edges||[]).map(e=>({...e,a:byId[e.source],b:byId[e.target]})).filter(e=>e.a&&e.b);
+
+  let view={scale:1,ox:0,oy:0};
+  let dpr=Math.max(1,window.devicePixelRatio||1);
+  let dragNode=null,panning=false,panStart=null,hover=null;
+  let running=true;
+
+  function resize(){
+    const rect=canvas.parentElement.getBoundingClientRect();
+    canvas.width=Math.max(1,Math.round(rect.width*dpr));
+    canvas.height=Math.max(1,Math.round(rect.height*dpr));
+    canvas.style.width=rect.width+'px';
+    canvas.style.height=rect.height+'px';
+  }
+  resize();
+  const ro=new ResizeObserver(resize); ro.observe(canvas.parentElement);
+
+  function toScreen(x,y){
+    const w=canvas.width,h=canvas.height;
+    return [w/2+(x+view.ox)*view.scale*dpr, h/2+(y+view.oy)*view.scale*dpr];
+  }
+  function toWorld(px,py){
+    const w=canvas.width,h=canvas.height;
+    return [(px-w/2)/(view.scale*dpr)-view.ox, (py-h/2)/(view.scale*dpr)-view.oy];
+  }
+
+  function tick(){
+    for(let i=0;i<nodes.length;i++){
+      for(let j=i+1;j<nodes.length;j++){
+        const a=nodes[i],b=nodes[j];
+        let dx=a.x-b.x,dy=a.y-b.y;
+        let d2=dx*dx+dy*dy||0.01;
+        let f=2400/d2;
+        const d=Math.sqrt(d2); dx/=d; dy/=d;
+        a.vx+=dx*f; a.vy+=dy*f; b.vx-=dx*f; b.vy-=dy*f;
+      }
+    }
+    for(const e of edges){
+      let dx=e.b.x-e.a.x,dy=e.b.y-e.a.y;
+      const d=Math.sqrt(dx*dx+dy*dy)||0.01;
+      const f=(d-100)*0.02*(0.4+e.weight);
+      dx/=d; dy/=d;
+      e.a.vx+=dx*f; e.a.vy+=dy*f; e.b.vx-=dx*f; e.b.vy-=dy*f;
+    }
+    for(const n of nodes){ n.vx-=n.x*0.008; n.vy-=n.y*0.008; }
+    for(const n of nodes){
+      if(n===dragNode)continue;
+      n.vx*=0.82; n.vy*=0.82;
+      n.x+=n.vx*0.15; n.y+=n.vy*0.15;
+    }
+  }
+
+  function draw(){
+    const cs=getComputedStyle(document.documentElement);
+    const border=cs.getPropertyValue('--border').trim();
+    const accent=cs.getPropertyValue('--accent').trim();
+    const muted=cs.getPropertyValue('--muted').trim();
+    const fg=cs.getPropertyValue('--fg').trim();
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    for(const e of edges){
+      const [ax,ay]=toScreen(e.a.x,e.a.y), [bx,by]=toScreen(e.b.x,e.b.y);
+      ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by);
+      ctx.strokeStyle=border; ctx.globalAlpha=0.35+e.weight*0.5; ctx.lineWidth=Math.max(1,e.weight*2*dpr);
+      ctx.stroke(); ctx.globalAlpha=1;
+    }
+    for(const n of nodes){
+      const [x,y]=toScreen(n.x,n.y);
+      const r=(n===hover?7:5)*dpr;
+      ctx.beginPath(); ctx.arc(x,y,r,0,7);
+      ctx.fillStyle=n===hover?accent:fg;
+      ctx.globalAlpha=n===hover?1:0.75;
+      ctx.fill(); ctx.globalAlpha=1;
+      if(view.scale>0.6){
+        ctx.font=`${11*dpr}px monospace`; ctx.fillStyle=muted;
+        ctx.fillText(n.label.slice(0,28),x+r+5,y+4);
+      }
+    }
+  }
+
+  function loop(){
+    if(!running)return;
+    tick(); draw();
+    requestAnimationFrame(loop);
+  }
+  loop();
+
+  function nodeAt(px,py){
+    const [wx,wy]=toWorld(px,py);
+    let best=null,bestD=14/view.scale;
+    for(const n of nodes){
+      const d=Math.hypot(n.x-wx,n.y-wy);
+      if(d<bestD){best=n;bestD=d;}
+    }
+    return best;
+  }
+
+  canvas.onwheel=(e)=>{
+    e.preventDefault();
+    const delta=e.deltaY>0?0.9:1.1;
+    view.scale=Math.min(3,Math.max(0.25,view.scale*delta));
+  };
+  canvas.onpointerdown=(e)=>{
+    const rect=canvas.getBoundingClientRect();
+    const px=(e.clientX-rect.left)*dpr, py=(e.clientY-rect.top)*dpr;
+    const n=nodeAt(px,py);
+    if(n){ dragNode=n; canvas.classList.add('dragging'); }
+    else { panning=true; panStart=[e.clientX,e.clientY,view.ox,view.oy]; canvas.classList.add('dragging'); }
+    canvas.setPointerCapture(e.pointerId);
+  };
+  canvas.onpointermove=(e)=>{
+    const rect=canvas.getBoundingClientRect();
+    const px=(e.clientX-rect.left)*dpr, py=(e.clientY-rect.top)*dpr;
+    if(dragNode){
+      const [wx,wy]=toWorld(px,py);
+      dragNode.x=wx; dragNode.y=wy; dragNode.vx=0; dragNode.vy=0;
+    } else if(panning){
+      view.ox=panStart[2]+(e.clientX-panStart[0])/(view.scale*dpr)*dpr;
+      view.oy=panStart[3]+(e.clientY-panStart[1])/(view.scale*dpr)*dpr;
+    } else {
+      const n=nodeAt(px,py);
+      hover=n;
+      if(n){
+        tipEl.style.opacity=1;
+        tipEl.style.left=Math.min((e.clientX-rect.left)+12,rect.width-250)+'px';
+        tipEl.style.top=Math.max((e.clientY-rect.top)-10,0)+'px';
+        tipEl.innerHTML=`${esc(n.label)}<div class="gt-src">${esc(n.source)}</div>`;
+      } else tipEl.style.opacity=0;
+    }
+  };
+  function endDrag(e){
+    dragNode=null; panning=false;
+    canvas.classList.remove('dragging');
+    try{canvas.releasePointerCapture(e.pointerId);}catch(err){}
+  }
+  canvas.onpointerup=endDrag;
+  canvas.onpointerleave=()=>{hover=null;tipEl.style.opacity=0;};
+
+  return {destroy(){running=false;ro.disconnect();}};
+}
+
+async function loadGraph(){
+  if(graphSim){graphSim.destroy();graphSim=null;}
+  const canvas=document.getElementById('admin-canvas');
+  const tip=document.getElementById('graph-tip');
+  const wrap=canvas.closest('.graph-wrap');
+  wrap.querySelector('.graph-empty')?.remove();
+  try{
+    const r=await fetch('/admin/graph');
+    if(!r.ok)throw new Error(`${r.status}`);
+    const data=await r.json();
+    if(!data.nodes||!data.nodes.length){
+      const div=document.createElement('div'); div.className='graph-empty admin-empty';
+      div.style.cssText='position:absolute;inset:0;display:grid;place-items:center;margin:20px;';
+      div.textContent='No knowledge base entries yet — ask Shelby to remember something.';
+      wrap.appendChild(div);
+      return;
+    }
+    graphSim=initGraphSim(canvas,tip,data);
+  }catch(e){
+    const div=document.createElement('div'); div.className='graph-empty admin-empty';
+    div.style.cssText='position:absolute;inset:0;display:grid;place-items:center;margin:20px;';
+    div.textContent='could not load graph: '+String(e);
+    wrap.appendChild(div);
+  }
+}
+
+function adminSwitchView(view){
+  document.querySelectorAll('.admin-tab').forEach(t=>t.classList.toggle('active',t.dataset.view===view));
+  adminOverviewEl.hidden=view!=='overview';
+  adminGraphEl.hidden=view!=='graph';
+  if(view==='overview')loadOverview(); else loadGraph();
+}
+document.querySelectorAll('.admin-tab').forEach(t=>t.onclick=()=>adminSwitchView(t.dataset.view));
+
+function adminOpen(){adminModal.hidden=false;adminSwitchView('overview');}
+function adminCloseFn(){
+  adminModal.hidden=true;
+  if(graphSim){graphSim.destroy();graphSim=null;}
+}
+document.getElementById('admin-btn').onclick=adminOpen;
+document.getElementById('admin-close').onclick=adminCloseFn;
+adminModal.addEventListener('click',e=>{if(e.target===adminModal)adminCloseFn();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!adminModal.hidden)adminCloseFn();});
 
 /* ── Wiring ─────────────────────────────────────────────────── */
 input.addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,130)+'px';});

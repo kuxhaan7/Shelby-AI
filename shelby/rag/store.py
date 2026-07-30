@@ -70,3 +70,56 @@ class RagStore:
 
     def count(self) -> int:
         return self._col.count()
+
+    def graph_data(self, top_k: int = 3, min_similarity: float = 0.35, max_nodes: int = 500) -> dict[str, Any]:
+        """Node-link graph of stored passages, connected by embedding similarity.
+
+        Each passage is a node; an edge connects it to its top_k most similar
+        other passages above min_similarity, mirroring how a linked-notes
+        graph (Obsidian's graph view) reads, except the "links" here are
+        computed from semantic similarity rather than authored wikilinks.
+        """
+        if self._col.count() == 0:
+            return {"nodes": [], "edges": []}
+
+        raw = self._col.get(include=["embeddings", "documents", "metadatas"], limit=max_nodes)
+        ids = raw["ids"]
+        docs = raw["documents"]
+        metas = raw["metadatas"]
+        embeddings = raw["embeddings"]
+
+        import numpy as np
+        vecs = np.asarray(embeddings, dtype=float)
+        norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+        norms[norms == 0] = 1e-9
+        unit = vecs / norms
+        sims = unit @ unit.T
+
+        nodes = []
+        for i, doc_id in enumerate(ids):
+            text = docs[i] or ""
+            label = text[:80] + ("..." if len(text) > 80 else "")
+            nodes.append({"id": doc_id, "label": label, "source": (metas[i] or {}).get("source", "unknown")})
+
+        edges = []
+        seen: set[tuple[int, int]] = set()
+        for i in range(len(ids)):
+            order = sims[i].argsort()[::-1]
+            picked = 0
+            for j in order:
+                j = int(j)
+                if j == i:
+                    continue
+                score = float(sims[i][j])
+                if score < min_similarity:
+                    break
+                key = (i, j) if i < j else (j, i)
+                if key in seen:
+                    continue
+                seen.add(key)
+                edges.append({"source": ids[i], "target": ids[j], "weight": round(score, 3)})
+                picked += 1
+                if picked >= top_k:
+                    break
+
+        return {"nodes": nodes, "edges": edges}

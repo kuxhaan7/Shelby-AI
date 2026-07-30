@@ -47,6 +47,7 @@ Every example passes the gate (faithfulness and relevance at 1.00, conciseness a
 | MCP connectors | Connect Gmail, Notion, Apollo, and others by URL, at runtime or through config |
 | Webhooks | External events (a new file, a GitHub push) trigger a saved skill automatically |
 | Schema drift | Flags added, removed, or retyped columns on a recurring dataset |
+| Admin panel | One view of memory, skills, tasks, webhooks, MCP, and usage, plus a knowledge base graph |
 | Self-critique | Learns durable lessons from its own mistakes |
 | Model fallback | Falls back across models on rate limits and outages |
 | Interfaces | Web chat UI and a Telegram bot in one process |
@@ -89,6 +90,8 @@ python -m shelby.dataquality.demo
 | GET/POST | `/webhooks` | List or register incoming webhooks bound to a skill |
 | POST | `/webhooks/{name}` | Trigger a webhook, runs its bound skill in the background |
 | DELETE | `/webhooks/{name}` | Remove a webhook |
+| GET | `/admin/overview` | Memory, skills, tasks, webhooks, MCP connections, schema baselines, usage/cost |
+| GET | `/admin/graph` | Knowledge base as a node-link graph, connected by embedding similarity |
 
 Example chat request:
 

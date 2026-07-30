@@ -60,3 +60,10 @@ class NotesStore:
             return "Memory is empty."
         lines = [f"• {k}: {v['value']}" for k, v in self._data.items()]
         return "\n".join(lines)
+
+    def as_list(self) -> list[dict[str, str]]:
+        """Structured view of every stored fact, for the admin UI."""
+        return [
+            {"key": k, "value": v["value"], "updated_at": v.get("updated_at", "")}
+            for k, v in sorted(self._data.items())
+        ]
