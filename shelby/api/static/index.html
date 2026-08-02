@@ -167,6 +167,15 @@ body {
 .dl-chip svg { width: 15px; height: 15px; color: var(--muted); }
 .hint { text-align: center; font-size: 11px; color: var(--faint); padding: 0 16px 10px; flex-shrink: 0; }
 
+/* ── Welcome action buttons ────────────────────────────────────── */
+.wa-wrap { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 14px; }
+.wa-btn { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; text-align: left;
+  font-family: var(--mono); background: var(--surface); border: 1px solid var(--border);
+  color: var(--fg); padding: 10px 14px; border-radius: 10px; cursor: pointer; transition: all .14s; }
+.wa-btn:hover { border-color: var(--accent); }
+.wa-label { font-size: 13px; font-weight: 600; }
+.wa-hint { font-size: 11px; color: var(--muted); }
+
 /* ── Image attachments ──────────────────────────────────────── */
 .inbar-wrap { margin: 0 18px 8px; }
 .inbar-wrap .inbar { margin: 0; }
@@ -306,7 +315,7 @@ body {
     <div class="hbtns">
       <button id="admin-btn" class="hbtn label">Admin</button>
       <button id="mcp-btn" class="hbtn label"><span class="full">Connectors</span><span class="short">Connect</span></button>
-      <button id="demo-btn" class="hbtn label primary"><span class="full">Data-QC demo</span><span class="short">Demo</span></button>
+      <button id="demo-btn" class="hbtn label primary"><span class="full">DB FIX</span><span class="short">DB FIX</span></button>
       <button id="clear-btn" class="hbtn label">Clear</button>
       <button id="theme-btn" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">
         <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -416,8 +425,15 @@ document.getElementById('theme-btn').onclick=()=>{
 const WELCOME = [
   "**Shelby** — a Claude-powered field agent with live web access, persistent memory, a dynamic skill system, and a data-quality repair loop.",
   "",
-  "Ask me anything, **upload a CSV** to inspect, or **speak** your query. Run the **Data-QC demo** to watch me take a broken dataset from a failing score to 100.",
+  "Ask me anything, paste an image, or speak your query.",
 ].join("\n");
+
+/* Actions offered in the welcome message, so the entry points are buttons
+   you can click rather than instructions you have to read. */
+const WELCOME_ACTIONS = [
+  {label: "Upload a database", hint: "inspect a real CSV", act: () => fileInput.click()},
+  {label: "DB FIX demo", hint: "watch a broken dataset go to 100", act: () => demo()},
+];
 
 let history = [], loading = false;
 
@@ -1002,8 +1018,20 @@ input.addEventListener('input',function(){this.style.height='auto';this.style.he
 input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
 sendBtn.onclick=send;
 document.getElementById('demo-btn').onclick=demo;
-document.getElementById('clear-btn').onclick=()=>{history=[];chat.innerHTML='';add('shelby',md(WELCOME));};
-add('shelby',md(WELCOME)); input.focus();
+function showWelcome(){
+  const w=add('shelby',md(WELCOME));
+  const bubble=w.querySelector('.bubble');
+  const wrap=document.createElement('div'); wrap.className='wa-wrap';
+  for(const a of WELCOME_ACTIONS){
+    const btn=document.createElement('button'); btn.className='wa-btn'; btn.type='button';
+    btn.innerHTML=`<span class="wa-label">${esc(a.label)}</span><span class="wa-hint">${esc(a.hint)}</span>`;
+    btn.onclick=a.act;
+    wrap.appendChild(btn);
+  }
+  bubble.appendChild(wrap); sb();
+}
+document.getElementById('clear-btn').onclick=()=>{history=[];chat.innerHTML='';showWelcome();};
+showWelcome(); input.focus();
 </script>
 </body>
 </html>
