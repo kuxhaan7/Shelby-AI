@@ -1,12 +1,14 @@
 """Pydantic request/response models."""
 
-from typing import Literal
+from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
 class Message(BaseModel):
     role: Literal["user", "assistant"]
-    content: str
+    # Either a plain string, or Claude's native content-block list so a turn
+    # can carry images alongside text (vision).
+    content: str | list[dict[str, Any]]
 
 
 class ChatRequest(BaseModel):

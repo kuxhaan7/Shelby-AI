@@ -55,7 +55,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "Hey! I'm Shelby.\n\n"
         "• Type → I reply in text\n"
-        "• Send voice 🎤 → I reply in voice\n\n"
+        "• Send voice 🎤 → I reply in voice\n"
+        "• Send a photo 📷 → I look at it and tell you what I see\n\n"
         "Commands: /clear /testvoice /id /help\n"
         f"Voice: {'ready 🔊' if tts else 'unavailable (no ELEVENLABS_API_KEY)'}"
     )
@@ -132,6 +133,7 @@ async def _process(update: Update, user_text: str, reply_with_voice: bool) -> No
         })
         history.append({"role": "assistant", "content": "Understood. Memory loaded."})
 
+    # user_text is either a plain string or Claude content blocks (text + images).
     history.append({"role": "user", "content": user_text})
 
     await update.message.chat.send_action(ChatAction.TYPING)
@@ -206,6 +208,37 @@ async def handle_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await _process(update, text, reply_with_voice=True)
 
 
+async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send a photo to Claude as an image block so Shelby can actually see it."""
+    import base64
+
+    await update.message.chat.send_action(ChatAction.TYPING)
+
+    # Telegram ships several sizes; the last is the largest.
+    photo = update.message.photo[-1]
+    tg_file = await photo.get_file()
+    raw = bytes(await tg_file.download_as_bytearray())
+
+    if len(raw) > 5 * 1024 * 1024:
+        await update.message.reply_text("That image is too large for me to look at (5MB limit).")
+        return
+
+    caption = (update.message.caption or "").strip()
+    content = [
+        {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                # Telegram always re-encodes photos to JPEG.
+                "media_type": "image/jpeg",
+                "data": base64.b64encode(raw).decode(),
+            },
+        },
+        {"type": "text", "text": caption or "What do you see in this image?"},
+    ]
+    await _process(update, content, reply_with_voice=False)
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _split(text: str, limit: int) -> list[str]:
@@ -242,6 +275,7 @@ def build_app(shared_agent: ShelbyAgent | None = None) -> Application:
     app.add_handler(CommandHandler("id", cmd_id))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     return app
 
 

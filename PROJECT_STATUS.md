@@ -30,6 +30,7 @@ It grew in deliberate phases, and each phase had to earn its place by making She
 | Reach | Deployed to Railway | Public service running |
 | Reach | Telegram bot connected | Usable from a phone |
 | Reach | Voice input and output | Replies match the input format |
+| Reach | Vision | Paste, drop, or upload an image on web, or send a photo on Telegram, and Shelby sees it |
 | Autonomy | Web search through Tavily | Answers use live data |
 | Autonomy | Self-writing memory and dynamic skills | Shelby learns and remembers |
 | Reliability | Model fallback chain | Survives rate limits and outages |
@@ -121,6 +122,7 @@ FastAPI service (uvicorn)
 | 6 | Telegram bot, text and voice | `shelby/telegram/bot.py` |
 | 7 | Voice output with ElevenLabs | `shelby/tts/elevenlabs.py` |
 | 8 | Voice input with ElevenLabs | `shelby/stt/elevenlabs.py` |
+| 8b | Vision, images in chat on web and Telegram | `shelby/api/static/index.html`, `shelby/telegram/bot.py` |
 | 9 | Persistent structured memory | `shelby/memory/notes.py` |
 | 10 | Dynamic skills at runtime | `shelby/skills/registry.py` |
 | 11 | Live web search with Tavily | `shelby/tools.py` |

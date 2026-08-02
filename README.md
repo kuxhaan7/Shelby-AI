@@ -17,7 +17,7 @@ On a deliberately broken two-table dataset (a CRM export and an ERP export that 
 
 For a dataset that arrives repeatedly rather than once, Shelby remembers its column structure and flags schema drift: columns added, removed, or a column's type changing between one export and the next. Bound to a webhook, this turns a one-off cleanup into an ongoing pipeline that catches a broken upstream change the moment it lands.
 
-Beyond the data loop, Shelby holds a conversation, searches the live web, remembers facts across sessions, writes and runs its own Python skills, schedules recurring jobs, speaks and listens, connects to external services through MCP, and can be triggered by incoming webhooks so an outside event runs one of its skills automatically.
+Beyond the data loop, Shelby holds a conversation, searches the live web, remembers facts across sessions, writes and runs its own Python skills, schedules recurring jobs, speaks and listens, sees images you paste or upload, connects to external services through MCP, and can be triggered by incoming webhooks so an outside event runs one of its skills automatically.
 
 ## Evaluation results
 
@@ -44,6 +44,7 @@ Every example passes the gate (faithfulness and relevance at 1.00, conciseness a
 | Dynamic skills | Shelby writes and runs new Python skills at runtime |
 | Scheduling | A heartbeat loop plus cron jobs through APScheduler |
 | Voice | Speech to text and text to speech with ElevenLabs |
+| Vision | Upload, paste, or drop an image and Shelby looks at it, on web and Telegram |
 | MCP connectors | Connect Gmail, Notion, Apollo, and others by URL, at runtime or through config |
 | Webhooks | External events (a new file, a GitHub push) trigger a saved skill automatically |
 | Schema drift | Flags added, removed, or retyped columns on a recurring dataset |

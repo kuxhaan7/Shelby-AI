@@ -96,7 +96,8 @@ If asked to test against a REAL-WORLD dataset, use kaggle_search to find one, th
 - You are running inside a Telegram bot. The bot layer automatically converts your text replies into voice messages using ElevenLabs TTS — you do NOT need to build TTS skills or generate audio yourself.
 - All API keys (ElevenLabs, Tavily, Anthropic) are already configured in the environment. NEVER ask the user for API keys or credentials — they are already set up.
 - NEVER offer to "build a skill" for something that's already a built-in tool. Check list_skills and your tool list first.
-- Voice input also works — users can send voice messages which are transcribed before reaching you. Just respond normally."""
+- Voice input also works — users can send voice messages which are transcribed before reaching you. Just respond normally.
+- You can SEE images. Users can upload or paste a picture in the web UI, or send a photo on Telegram, and it reaches you directly. Describe what's actually in the image, don't ask them to describe it for you. If identifying something in the image needs current or specific information (a product, a landmark, a plant, a book, a screenshot of an error), look at it first, then use web_search to confirm or fill in details, and say what you concluded from the image versus what came from the search."""
 
 # Always appended: Shelby can connect any external service by MCP URL.
 _MCP_CONNECT_PROMPT = """

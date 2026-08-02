@@ -167,6 +167,26 @@ body {
 .dl-chip svg { width: 15px; height: 15px; color: var(--muted); }
 .hint { text-align: center; font-size: 11px; color: var(--faint); padding: 0 16px 10px; flex-shrink: 0; }
 
+/* ── Image attachments ──────────────────────────────────────── */
+.inbar-wrap { margin: 0 18px 8px; }
+.inbar-wrap .inbar { margin: 0; }
+.attach-tray { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 4px 8px; }
+.attach-tray:empty { display: none; }
+.attach-thumb { position: relative; width: 58px; height: 58px; border-radius: 9px; overflow: hidden;
+  border: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+.attach-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.attach-x { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%;
+  border: none; background: rgba(20,19,18,.72); color: #fff; font-size: 11px; line-height: 1;
+  cursor: pointer; display: grid; place-items: center; padding: 0; }
+.attach-x:hover { background: var(--danger); }
+.msg-img { max-width: min(280px, 100%); border-radius: 10px; border: 1px solid var(--border);
+  display: block; margin-top: 8px; }
+.dropzone { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
+  background: rgba(20,19,18,.55); backdrop-filter: blur(3px); pointer-events: none; }
+.dropzone[hidden] { display: none; }
+.dropzone div { border: 2px dashed var(--accent); border-radius: 16px; padding: 28px 40px;
+  background: var(--bg); color: var(--fg); font-size: 14px; }
+
 /* ── Connectors modal ───────────────────────────────────────── */
 .modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px;
   background: rgba(20,19,18,.42); backdrop-filter: blur(3px); }
@@ -297,21 +317,26 @@ body {
 
   <div class="chat" id="chat"></div>
 
-  <div class="inbar">
-    <input type="file" id="file-input" accept=".csv,.gz,text/csv,application/gzip" hidden>
-    <button id="file-btn" class="iobtn" title="Upload a CSV to inspect">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-    </button>
-    <button id="mic-btn" class="iobtn" title="Record voice">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
-    </button>
-    <textarea id="input" placeholder="Message Shelby…" rows="1" maxlength="4000"></textarea>
-    <button id="send" class="iobtn" aria-label="Send">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-    </button>
+  <div class="inbar-wrap">
+    <div id="attach-tray" class="attach-tray"></div>
+    <div class="inbar">
+      <input type="file" id="file-input" accept="image/png,image/jpeg,image/gif,image/webp,.csv,.gz,text/csv,application/gzip" multiple hidden>
+      <button id="file-btn" class="iobtn" title="Attach an image, or a CSV to inspect">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+      </button>
+      <button id="mic-btn" class="iobtn" title="Record voice">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+      </button>
+      <textarea id="input" placeholder="Message Shelby…" rows="1" maxlength="4000"></textarea>
+      <button id="send" class="iobtn" aria-label="Send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+      </button>
+    </div>
   </div>
-  <div class="hint">Enter to send · Shift+Enter for newline · powered by Claude</div>
+  <div class="hint">Enter to send · Shift+Enter for newline · paste or drop an image · powered by Claude</div>
 </div>
+
+<div id="dropzone" class="dropzone" hidden><div>Drop image to attach</div></div>
 
 <!-- ── Connectors modal ─────────────────────────────────────────── -->
 <div id="mcp-modal" class="modal" hidden>
@@ -450,19 +475,90 @@ function attachFiles(msgEl,files){
   bubble.appendChild(wrap); sb();
 }
 
+/* ── Image attachments ──────────────────────────────────────── */
+const MAX_IMAGE_BYTES=5*1024*1024;      // Claude's per-image cap
+const MAX_IMAGE_DIM=1568;               // downscale beyond this; larger buys no accuracy
+const OK_IMAGE_TYPES=['image/png','image/jpeg','image/gif','image/webp'];
+const attachTray=document.getElementById('attach-tray');
+let pending=[];   // [{media_type, data(base64), url(objectURL)}]
+
+function renderTray(){
+  attachTray.innerHTML='';
+  pending.forEach((p,i)=>{
+    const d=document.createElement('div'); d.className='attach-thumb';
+    d.innerHTML=`<img src="${p.url}" alt=""><button class="attach-x" aria-label="Remove">✕</button>`;
+    d.querySelector('.attach-x').onclick=()=>{URL.revokeObjectURL(p.url);pending.splice(i,1);renderTray();};
+    attachTray.appendChild(d);
+  });
+}
+
+/* Downscale large images in-browser so we stay under Claude's limits and
+   don't ship needless megabytes over the wire. */
+function fileToImagePart(file){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      let {width:w,height:h}=img;
+      const scale=Math.min(1,MAX_IMAGE_DIM/Math.max(w,h));
+      w=Math.round(w*scale); h=Math.round(h*scale);
+      const canvas=document.createElement('canvas');
+      canvas.width=w; canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      // GIFs lose animation through canvas, which is fine: Claude sees one frame anyway.
+      const outType=file.type==='image/png'?'image/png':'image/jpeg';
+      const dataUrl=canvas.toDataURL(outType,0.85);
+      const base64=dataUrl.split(',')[1];
+      URL.revokeObjectURL(url);
+      if(base64.length*0.75>MAX_IMAGE_BYTES){reject(new Error('image too large even after resizing'));return;}
+      resolve({media_type:outType,data:base64,url:dataUrl});
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('could not read image'));};
+    img.src=url;
+  });
+}
+
+async function addImages(files){
+  for(const f of files){
+    if(!OK_IMAGE_TYPES.includes(f.type))continue;
+    try{ pending.push(await fileToImagePart(f)); }
+    catch(e){ add('shelby',`<strong>Could not attach ${esc(f.name)}</strong><br>${esc(String(e))}`); }
+  }
+  renderTray();
+  input.focus();
+}
+
 /* ── Chat ───────────────────────────────────────────────────── */
 const input=document.getElementById('input'), sendBtn=document.getElementById('send');
 async function send(){
-  if(loading)return; const text=input.value.trim(); if(!text)return;
+  if(loading)return;
+  const text=input.value.trim();
+  if(!text && !pending.length)return;
   input.value=''; input.style.height='auto';
-  add('user',text); history.push({role:'user',content:text});
-  think('thinking'); loading=true; setBusy(true);
+
+  // Claude's native shape: image blocks first, then the text block.
+  const imgs=pending.slice();
+  const content = imgs.length
+    ? [...imgs.map(p=>({type:'image',source:{type:'base64',media_type:p.media_type,data:p.data}})),
+       {type:'text',text:text||'What do you see in this image?'}]
+    : text;
+
+  const w=add('user',text||'(image)');
+  for(const p of imgs){
+    const im=document.createElement('img'); im.className='msg-img'; im.src=p.url;
+    w.querySelector('.bubble').appendChild(im);
+  }
+  pending.forEach(p=>{ if(p.url.startsWith('blob:'))URL.revokeObjectURL(p.url); });
+  pending=[]; renderTray(); sb();
+
+  history.push({role:'user',content});
+  think(imgs.length?'looking at the image':'thinking'); loading=true; setBusy(true);
   const slow=setTimeout(()=>{const l=document.querySelector('#think .tlabel');if(l)l.textContent='searching the web';},6000);
   try{
     const r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:history,stream:false})});
     clearTimeout(slow); unthink();
     if(!r.ok){const x=await r.text().catch(()=>r.statusText);throw new Error(`${r.status} ${x.slice(0,180)}`);}
-    const d=await r.json(); const w=add('shelby',md(d.reply),`model: ${d.model}`); attachFiles(w,d.files); history.push({role:'assistant',content:d.reply});
+    const d=await r.json(); const wr=add('shelby',md(d.reply),`model: ${d.model}`); attachFiles(wr,d.files); history.push({role:'assistant',content:d.reply});
   }catch(e){clearTimeout(slow);unthink();add('shelby',`<strong>Error</strong><br>${esc(String(e))}`);}
   finally{loading=false;setBusy(false);input.focus();}
 }
@@ -495,12 +591,24 @@ function scorecard(d){
   requestAnimationFrame(()=>setTimeout(()=>w.querySelectorAll('.fill').forEach(f=>{f.style.width=f.dataset.to+'%';}),90));
 }
 
-/* ── File upload → inspect CSV ──────────────────────────────── */
+/* ── File input: images attach to chat, CSVs go to the profiler ─ */
 const fileInput=document.getElementById('file-input');
 document.getElementById('file-btn').onclick=()=>fileInput.click();
 fileInput.onchange=async()=>{
-  const f=fileInput.files[0]; if(!f)return; fileInput.value='';
-  if(loading)return; loading=true; setBusy(true);
+  const files=[...fileInput.files]; fileInput.value='';
+  if(!files.length)return;
+  const images=files.filter(f=>OK_IMAGE_TYPES.includes(f.type));
+  const others=files.filter(f=>!OK_IMAGE_TYPES.includes(f.type));
+  if(images.length)await addImages(images);
+  for(const f of others)await inspectCsv(f);
+};
+
+async function inspectCsv(f){
+  // Wait rather than silently drop the file if something else is mid-flight
+  // (e.g. an image was attached in the same batch).
+  for(let i=0;i<100 && loading;i++)await new Promise(r=>setTimeout(r,100));
+  if(loading)return;
+  loading=true; setBusy(true);
   add('user',`uploaded: ${f.name}`);
   think(`profiling ${esc(f.name)}`);
   try{
@@ -512,6 +620,33 @@ fileInput.onchange=async()=>{
   }catch(e){unthink();add('shelby',`<strong>Upload failed</strong><br>${esc(String(e))}`);}
   finally{loading=false;setBusy(false);}
 }
+
+/* Paste an image straight into the composer, like Claude. */
+document.addEventListener('paste',e=>{
+  const items=[...(e.clipboardData?.items||[])];
+  const files=items.filter(i=>i.kind==='file'&&OK_IMAGE_TYPES.includes(i.type))
+                   .map(i=>i.getAsFile()).filter(Boolean);
+  if(files.length){e.preventDefault();addImages(files);}
+});
+
+/* Drag and drop anywhere on the page. */
+const dropzone=document.getElementById('dropzone');
+let dragDepth=0;
+document.addEventListener('dragenter',e=>{
+  if(![...(e.dataTransfer?.types||[])].includes('Files'))return;
+  dragDepth++; dropzone.hidden=false;
+});
+document.addEventListener('dragover',e=>{ if(!dropzone.hidden)e.preventDefault(); });
+document.addEventListener('dragleave',()=>{ if(--dragDepth<=0){dragDepth=0;dropzone.hidden=true;} });
+document.addEventListener('drop',e=>{
+  if(dropzone.hidden)return;
+  e.preventDefault(); dragDepth=0; dropzone.hidden=true;
+  const files=[...(e.dataTransfer?.files||[])];
+  const images=files.filter(f=>OK_IMAGE_TYPES.includes(f.type));
+  const others=files.filter(f=>!OK_IMAGE_TYPES.includes(f.type));
+  if(images.length)addImages(images);
+  others.forEach(f=>inspectCsv(f));
+});
 function fileReport(d){
   const s=d.scores, rows=[['completeness',s.completeness],['uniqueness',s.uniqueness]].map(([k,v])=>`<div class="row"><div class="dim">${k}</div><div class="track"><div class="fill" data-to="${v}"></div></div><div class="rv">${v.toFixed(0)}</div></div>`).join('');
   const issues=(d.issues||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li>no obvious defects</li>';
