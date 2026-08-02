@@ -176,6 +176,14 @@ body {
 .wa-label { font-size: 13px; font-weight: 600; }
 .wa-hint { font-size: 11px; color: var(--muted); }
 
+/* ── DB FIX dropdown menu ──────────────────────────────────────── */
+.db-fix-menu { position: fixed; top: 60px; right: 16px; z-index: 100; display: flex; flex-direction: column;
+  gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; box-shadow: 0 4px 12px rgba(0,0,0,.15);
+  padding: 6px; min-width: 120px; }
+.db-fix-item { background: transparent; border: none; color: var(--fg); padding: 8px 12px; font-family: var(--mono);
+  font-size: 13px; cursor: pointer; border-radius: 6px; transition: all .14s; text-align: left; }
+.db-fix-item:hover { background: var(--user-bubble); }
+
 /* ── Image attachments ──────────────────────────────────────── */
 .inbar-wrap { margin: 0 18px 8px; }
 .inbar-wrap .inbar { margin: 0; }
@@ -427,13 +435,6 @@ const WELCOME = [
   "",
   "Ask me anything, paste an image, or speak your query.",
 ].join("\n");
-
-/* Actions offered in the welcome message, so the entry points are buttons
-   you can click rather than instructions you have to read. */
-const WELCOME_ACTIONS = [
-  {label: "Upload a database", hint: "inspect a real CSV", act: () => fileInput.click()},
-  {label: "DB FIX demo", hint: "watch a broken dataset go to 100", act: () => demo()},
-];
 
 let history = [], loading = false;
 
@@ -1017,18 +1018,24 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!adminModal.hidden)
 input.addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,130)+'px';});
 input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
 sendBtn.onclick=send;
-document.getElementById('demo-btn').onclick=demo;
+document.getElementById('demo-btn').onclick=showDbFixMenu;
+function showDbFixMenu(){
+  const menu=document.createElement('div'); menu.className='db-fix-menu';
+  const upload=document.createElement('button'); upload.className='db-fix-item'; upload.type='button';
+  upload.textContent='Upload';
+  upload.onclick=()=>{fileInput.click(); document.body.removeChild(menu);};
+  const dmobtn=document.createElement('button'); dmobtn.className='db-fix-item'; dmobtn.type='button';
+  dmobtn.textContent='Demo';
+  dmobtn.onclick=()=>{demo(); document.body.removeChild(menu);};
+  menu.appendChild(upload);
+  menu.appendChild(dmobtn);
+  menu.onclick=e=>e.stopPropagation();
+  document.body.appendChild(menu);
+  document.addEventListener('click',()=>{if(document.body.contains(menu))document.body.removeChild(menu);},{once:true});
+}
 function showWelcome(){
   const w=add('shelby',md(WELCOME));
-  const bubble=w.querySelector('.bubble');
-  const wrap=document.createElement('div'); wrap.className='wa-wrap';
-  for(const a of WELCOME_ACTIONS){
-    const btn=document.createElement('button'); btn.className='wa-btn'; btn.type='button';
-    btn.innerHTML=`<span class="wa-label">${esc(a.label)}</span><span class="wa-hint">${esc(a.hint)}</span>`;
-    btn.onclick=a.act;
-    wrap.appendChild(btn);
-  }
-  bubble.appendChild(wrap); sb();
+  sb();
 }
 document.getElementById('clear-btn').onclick=()=>{history=[];chat.innerHTML='';showWelcome();};
 showWelcome(); input.focus();
