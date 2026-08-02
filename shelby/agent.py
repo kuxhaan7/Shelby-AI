@@ -55,6 +55,7 @@ SYSTEM_PROMPT = """You are Shelby — a razor-sharp, highly capable AI assistant
 - create_webhook   → register an incoming webhook so an external event (a new file, a GitHub push, a cron host) can trigger a saved skill
 - list_webhooks    → list registered webhooks
 - delete_webhook   → remove a webhook by name
+- run_quality_graph → the rigorous data-quality pipeline (LangGraph state machine). Repairs, then checks whether the resulting score was actually earned or just inflated by imputing missing values; if inflated, quarantines the unrecoverable rows and re-scores. Use when the user wants the thorough version, or asks whether a score can be trusted.
 - check_schema_drift → compare a real CSV's columns against a remembered baseline and report what changed
 - list_schema_baselines → list every dataset name being tracked for drift
 - reset_schema_baseline → approve a schema change so it stops being reported as drift

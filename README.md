@@ -36,7 +36,7 @@ Every example passes the gate (faithfulness and relevance at 1.00, conciseness a
 
 | Capability | Detail |
 |-----------|--------|
-| Tool use | 25 tools driven by Claude function calling |
+| Tool use | 26 tools driven by Claude function calling |
 | Data-quality loop | Inspect, repair, and score broken datasets |
 | Retrieval memory | ChromaDB vector store with chunked ingestion |
 | Persistent memory | Structured facts about the user, kept across sessions |
@@ -48,6 +48,7 @@ Every example passes the gate (faithfulness and relevance at 1.00, conciseness a
 | MCP connectors | Connect Gmail, Notion, Apollo, and others by URL, at runtime or through config |
 | Webhooks | External events (a new file, a GitHub push) trigger a saved skill automatically |
 | Schema drift | Flags added, removed, or retyped columns on a recurring dataset |
+| LangGraph pipeline | Data-quality loop as a state machine that escalates when a score is imputation-inflated |
 | Admin panel | One view of memory, skills, tasks, webhooks, MCP, and usage, plus a knowledge base graph |
 | Self-critique | Learns durable lessons from its own mistakes |
 | Model fallback | Falls back across models on rate limits and outages |
@@ -93,6 +94,7 @@ python -m shelby.dataquality.demo
 | DELETE | `/webhooks/{name}` | Remove a webhook |
 | GET | `/admin/overview` | Memory, skills, tasks, webhooks, MCP connections, schema baselines, usage/cost |
 | GET | `/admin/graph` | Knowledge base as a node-link graph, connected by embedding similarity |
+| GET | `/dataquality/graph` | Topology and mermaid rendering of the LangGraph quality pipeline |
 
 Example chat request:
 
@@ -110,7 +112,7 @@ Secrets are set as Railway environment variables and never committed: `ANTHROPIC
 
 ## Tech
 
-Python, Claude API (tool use), FastAPI, ChromaDB, LangChain and LangSmith, Tavily, ElevenLabs, python-telegram-bot, APScheduler, pandas, Docker, Railway.
+Python, Claude API (tool use), FastAPI, ChromaDB, LangChain, LangGraph and LangSmith, Tavily, ElevenLabs, python-telegram-bot, APScheduler, pandas, Docker, Railway.
 
 ## Screenshots
 

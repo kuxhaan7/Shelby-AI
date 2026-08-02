@@ -49,6 +49,7 @@ It grew in deliberate phases, and each phase had to earn its place by making She
 | Interface | Admin panel | One view of memory, skills, tasks, webhooks, MCP connections, and usage/cost |
 | Interface | Knowledge base graph | Obsidian-style node-link view of the RAG store, connected by embedding similarity |
 | Automation | Schema drift detection | A recurring export is checked against a remembered baseline; column changes are flagged before they break anything |
+| Flagship | LangGraph quality pipeline | The loop becomes a state machine that detects an imputation-inflated score and escalates to quarantine instead of accepting it |
 
 ## Engineering problems solved
 
@@ -81,6 +82,7 @@ The real work was in the debugging. Each of these was hit and fixed.
 | API | FastAPI and uvicorn, with server-sent event streaming |
 | Validation | Pydantic v2 |
 | Evaluation | LangChain LCEL judges and LangSmith experiments |
+| Pipelines | LangGraph state machine for the data-quality loop |
 | Deployment | Railway, multi-stage Docker |
 | Chat | python-telegram-bot |
 | Voice | ElevenLabs for speech to text and text to speech, ffmpeg for conversion |
@@ -105,7 +107,7 @@ FastAPI service (uvicorn)
     Model fallback chain
     Tool-use loop (Claude function calling)
     Token and cost tracking
-    25 tools: web search, knowledge base, memory, skills,
+    26 tools: web search, knowledge base, memory, skills,
               scheduling, Kaggle, file delivery, MCP connectors, webhooks, drift detection,
               and the data-quality skills
 ```
@@ -114,7 +116,7 @@ FastAPI service (uvicorn)
 
 | # | Capability | Location |
 |---|-----------|----------|
-| 1 | Tool use, 25 tools through Claude function calling | `shelby/tools.py` |
+| 1 | Tool use, 26 tools through Claude function calling | `shelby/tools.py` |
 | 2 | Retrieval memory with ChromaDB | `shelby/rag/` |
 | 3 | FastAPI server, REST and streaming | `shelby/api/main.py` |
 | 4 | LangChain and LangSmith evaluations | `shelby/evals/` |
@@ -137,6 +139,7 @@ FastAPI service (uvicorn)
 | 20 | Incoming webhooks, external events trigger a saved skill | `shelby/webhooks/` |
 | 21 | Schema drift detection for recurring datasets | `shelby/dataquality/drift.py` |
 | 22 | Admin panel with a knowledge base graph view | `/admin/overview`, `/admin/graph` in `shelby/api/main.py` |
+| 23 | LangGraph data-quality pipeline with conditional escalation | `shelby/dataquality/graph.py` |
 
 ## Evaluation results
 
@@ -186,6 +189,16 @@ A one-off cleanup is useful, but the real FDE problem is a dataset that arrives 
 
 This is what makes the webhook feature into an actual pipeline rather than a one-shot trigger: bind `check_schema_drift` to a webhook on a recurring export, and Shelby flags a broken upstream schema change the moment the next file lands, before anyone downstream notices bad data. `reset_schema_baseline` approves an intentional change so it stops being reported.
 
+### The pipeline as a LangGraph state machine
+
+`generic.run_loop` runs inspect, repair, and score once, straight through. It cannot react to its own output: if the repaired data still looks bad, it just reports the bad number. `shelby/dataquality/graph.py` models the same work as a LangGraph `StateGraph` so the pipeline can branch on what it actually produced.
+
+The interesting part is what it branches on. A cleaner that imputes aggressively can always reach a perfect score by inventing values, and that score is a lie: the data looks complete because the gaps were filled with placeholders, not because anything was recovered. Building this surfaced exactly that, the first version routed purely on the score and the escalation branch turned out to be unreachable, because imputation always got the score to 100.
+
+So the graph routes on trustworthiness instead. The first pass repairs conservatively and imputes. If more than 10% of cells had to be invented, the score is treated as inflated: the graph escalates, quarantines those unrecoverable rows to their own file for human review, and re-cleans and re-scores only the genuinely recoverable data. On a test file with half its cells empty, pass 1 scored 100 with 37.5% of cells imputed; pass 2 quarantined 10 rows and earned 100 on 0% imputation.
+
+Routing is deterministic (imputation share, score threshold, attempt cap), so a run costs no extra model calls. `GET /dataquality/graph` returns the topology and a mermaid rendering, and the `run_quality_graph` tool exposes it to Shelby, automatically delivering the quarantine file when one is produced.
+
 ## Admin panel
 
 The web UI's Admin button opens a single view of everything Shelby has persisted: structured memory, learned skills, scheduled tasks, webhooks, MCP connections, tracked schema baselines, and token usage with estimated cost. It reads from the same stores covered above, nothing new to maintain, just one place to see all of it instead of asking Shelby piece by piece.
@@ -217,7 +230,7 @@ Secrets are set as Railway environment variables and never committed:
 ```
 shelby/
   agent.py         core agent loop, model fallback, system prompt
-  tools.py         25 tools and the dispatcher
+  tools.py         26 tools and the dispatcher
   scheduler.py     heartbeat and cron jobs
   usage_tracker.py token and cost accounting
   api/             FastAPI: main.py, models.py, static/index.html

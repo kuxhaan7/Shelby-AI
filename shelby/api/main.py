@@ -277,6 +277,17 @@ async def admin_overview():
     return await run_in_threadpool(_rows)
 
 
+@app.get("/dataquality/graph")
+async def dataquality_graph():
+    """Topology of the LangGraph data-quality pipeline, plus a mermaid rendering."""
+    from ..dataquality import graph as dq_graph
+    def _build():
+        d = dq_graph.describe_graph()
+        d["mermaid"] = dq_graph.mermaid()
+        return d
+    return await run_in_threadpool(_build)
+
+
 @app.get("/admin/graph")
 async def admin_graph():
     """Node-link graph of the knowledge base: passages connected by semantic

@@ -342,6 +342,26 @@ TOOL_SCHEMAS = [
         },
     },
     {
+        "name": "run_quality_graph",
+        "description": (
+            "Run the LangGraph data-quality pipeline on a real CSV. Unlike the plain "
+            "inspect/fix/evaluate skills, this one is a state machine that reacts to its own "
+            "result: it repairs conservatively first, and if the resulting score is only high "
+            "because missing values were imputed (invented), it escalates, quarantines those "
+            "unrecoverable rows to a separate file for human review, and re-scores on the "
+            "genuinely recoverable data. Use this when the user wants the rigorous version, or "
+            "asks whether a quality score can be trusted. Returns the score history per pass "
+            "including how much of each pass was imputed."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Path to the real CSV file to process."},
+            },
+            "required": ["path"],
+        },
+    },
+    {
         "name": "list_schema_baselines",
         "description": "List every dataset name Shelby is tracking for schema drift, and how many columns each baseline has.",
         "input_schema": {"type": "object", "properties": {}, "required": []},
@@ -652,6 +672,47 @@ def check_schema_drift(args: dict) -> str:
     return "\n".join(lines)
 
 
+def run_quality_graph(args: dict, outbox=None) -> str:
+    from .dataquality import graph as dq_graph
+    path = (args.get("path") or "").strip()
+    if not path:
+        return "No path provided."
+    p = Path(path)
+    if not p.exists() or not p.is_file():
+        return f"No file found at {path}."
+    try:
+        r = dq_graph.run(p)
+    except Exception as exc:
+        return f"Quality graph failed: {exc}"
+
+    lines = [
+        f"LangGraph quality pipeline on {p.name}",
+        f"  rows: {r['rows']}, columns: {len(r['columns'] or [])}",
+        f"  score: {r['before']['overall']} -> {r['after']['overall']} (target {r['target_score']})",
+        f"  passes run: {r['attempts']}",
+    ]
+    for h in r["history"]:
+        lines.append(
+            f"    pass {h['attempt']} ({h['strategy']}): score {h['score']}, "
+            f"{h['imputed_share']*100:.1f}% of cells imputed"
+        )
+    if r["escalated"]:
+        lines.append(
+            f"  escalated: the first score was inflated by imputation, so "
+            f"{r['quarantined']} unrecoverable row(s) were quarantined and the data re-scored."
+        )
+        if r["quarantine_file"]:
+            lines.append(f"  quarantined rows written to: {r['quarantine_file']}")
+            if outbox is not None:
+                outbox.append(str(Path(r["quarantine_file"]).resolve()))
+    else:
+        lines.append("  no escalation needed: the score was earned, not imputed.")
+    if r["changelog"]:
+        lines.append("  changelog:")
+        lines.extend(f"    {c}" for c in r["changelog"])
+    return "\n".join(lines)
+
+
 def list_schema_baselines(_: dict) -> str:
     from .dataquality import drift
     baselines = drift.list_baselines()
@@ -728,6 +789,8 @@ def dispatch(
             return list_webhooks(tool_input)
         case "delete_webhook":
             return delete_webhook(tool_input)
+        case "run_quality_graph":
+            return run_quality_graph(tool_input, outbox)
         case "check_schema_drift":
             return check_schema_drift(tool_input)
         case "list_schema_baselines":
