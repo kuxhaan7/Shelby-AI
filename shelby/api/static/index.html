@@ -1020,18 +1020,20 @@ input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventD
 sendBtn.onclick=send;
 document.getElementById('demo-btn').onclick=showDbFixMenu;
 function showDbFixMenu(){
+  let existing=document.querySelector('.db-fix-menu');
+  if(existing){existing.remove(); return;}
   const menu=document.createElement('div'); menu.className='db-fix-menu';
   const upload=document.createElement('button'); upload.className='db-fix-item'; upload.type='button';
   upload.textContent='Upload';
-  upload.onclick=()=>{fileInput.click(); document.body.removeChild(menu);};
+  upload.onclick=()=>{fileInput.click(); menu.remove();};
   const dmobtn=document.createElement('button'); dmobtn.className='db-fix-item'; dmobtn.type='button';
   dmobtn.textContent='Demo';
-  dmobtn.onclick=()=>{demo(); document.body.removeChild(menu);};
+  dmobtn.onclick=()=>{demo(); menu.remove();};
   menu.appendChild(upload);
   menu.appendChild(dmobtn);
-  menu.onclick=e=>e.stopPropagation();
   document.body.appendChild(menu);
-  document.addEventListener('click',()=>{if(document.body.contains(menu))document.body.removeChild(menu);},{once:true});
+  const close=()=>{if(document.body.contains(menu))menu.remove();};
+  setTimeout(()=>document.addEventListener('click',close,{once:true}),0);
 }
 function showWelcome(){
   const w=add('shelby',md(WELCOME));
