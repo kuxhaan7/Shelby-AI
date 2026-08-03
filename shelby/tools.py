@@ -378,6 +378,64 @@ TOOL_SCHEMAS = [
             "required": ["path"],
         },
     },
+    {
+        "name": "find_files",
+        "description": "Find all supported files (PDF, DOCX, TXT, CSV, JSON, Markdown) in a directory.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "directory": {
+                    "type": "string",
+                    "description": "Directory path to search. Defaults to current directory.",
+                },
+                "recursive": {
+                    "type": "boolean",
+                    "description": "Search subdirectories recursively. Defaults to true.",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum number of files to return. Defaults to 100.",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "read_file",
+        "description": "Read and extract text from a file (PDF, DOCX, TXT, CSV, JSON, Markdown).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to the file to read.",
+                }
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "ingest_files",
+        "description": "Ingest all files from a directory into the knowledge base. Automatically chunks and stores documents.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "directory": {
+                    "type": "string",
+                    "description": "Directory path to ingest from. Defaults to current directory.",
+                },
+                "recursive": {
+                    "type": "boolean",
+                    "description": "Search subdirectories recursively. Defaults to true.",
+                },
+                "max_files": {
+                    "type": "integer",
+                    "description": "Maximum number of files to ingest. Defaults to 100.",
+                },
+            },
+            "required": [],
+        },
+    },
 ]
 
 
@@ -672,6 +730,63 @@ def check_schema_drift(args: dict) -> str:
     return "\n".join(lines)
 
 
+def find_files(args: dict) -> str:
+    """Find all supported files in a directory."""
+    from .file_ingestion import find_files as _find_files
+
+    directory = args.get("directory", ".")
+    recursive = args.get("recursive", True)
+    max_results = args.get("max_results", 100)
+
+    files = _find_files(directory, recursive=recursive)[:max_results]
+    if not files:
+        return f"No supported files found in {directory}"
+
+    return "\n".join(f"- {f}" for f in files)
+
+
+def read_file(args: dict) -> str:
+    """Read and extract text from a file."""
+    from .file_ingestion import read_file as _read_file
+
+    path = args.get("path", "")
+    if not path:
+        return "Error: path is required"
+
+    content, success = _read_file(path)
+    if not success:
+        return f"Error: Could not read file {path}"
+
+    # Truncate very long content
+    if len(content) > 8000:
+        return content[:8000] + f"\n\n... (truncated, total length: {len(content)} chars)"
+
+    return content
+
+
+def ingest_files(args: dict, rag_store=None) -> str:
+    """Ingest all files from a directory into the knowledge base."""
+    from .file_ingestion import ingest_files as _ingest_files
+
+    if rag_store is None:
+        return "Error: RAG store not available"
+
+    directory = args.get("directory", ".")
+    recursive = args.get("recursive", True)
+    max_files = args.get("max_files", 100)
+
+    results = _ingest_files(rag_store, directory, recursive=recursive, max_files=max_files)
+
+    msg = f"Ingestion complete: {results['ingested']} files ingested, {results['failed']} failed"
+    if results["documents"]:
+        msg += f", {len(results['documents'])} documents added to knowledge base"
+
+    if results["errors"]:
+        msg += "\n\nErrors:\n" + "\n".join(results["errors"][:5])
+
+    return msg
+
+
 def run_quality_graph(args: dict, outbox=None) -> str:
     from .dataquality import graph as dq_graph
     path = (args.get("path") or "").strip()
@@ -797,5 +912,11 @@ def dispatch(
             return list_schema_baselines(tool_input)
         case "reset_schema_baseline":
             return reset_schema_baseline(tool_input)
+        case "find_files":
+            return find_files(tool_input)
+        case "read_file":
+            return read_file(tool_input)
+        case "ingest_files":
+            return ingest_files(tool_input, rag_store)
         case _:
             return f"Unknown tool: {tool_name}"
