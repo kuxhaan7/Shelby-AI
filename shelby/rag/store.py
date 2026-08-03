@@ -71,6 +71,16 @@ class RagStore:
     def count(self) -> int:
         return self._col.count()
 
+    def get_all(self, limit: int = 1000) -> list[dict[str, Any]]:
+        """Get all documents from the store. Returns text, source, and ID for each."""
+        if self._col.count() == 0:
+            return []
+        raw = self._col.get(include=["documents", "metadatas"], limit=limit)
+        return [
+            {"id": id, "text": doc, "source": (meta or {}).get("source", "unknown")}
+            for id, doc, meta in zip(raw["ids"], raw["documents"], raw["metadatas"])
+        ]
+
     def graph_data(self, top_k: int = 3, min_similarity: float = 0.35, max_nodes: int = 500) -> dict[str, Any]:
         """Node-link graph of stored passages, connected by embedding similarity.
 

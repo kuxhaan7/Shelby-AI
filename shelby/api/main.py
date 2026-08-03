@@ -465,3 +465,12 @@ async def rag_search(req: SearchRequest):
         raise HTTPException(503, "RAG store not ready")
     raw = await run_in_threadpool(rag_store.query, req.query, req.n_results)
     return SearchResponse(results=[SearchResult(**r) for r in raw])
+
+
+@app.get("/rag/all")
+async def rag_all(limit: int = 1000):
+    """Get all documents in the knowledge base."""
+    if rag_store is None:
+        raise HTTPException(503, "RAG store not ready")
+    docs = await run_in_threadpool(rag_store.get_all, limit)
+    return {"documents": docs, "total": len(docs)}
