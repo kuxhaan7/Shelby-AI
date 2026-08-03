@@ -321,6 +321,7 @@ body {
       <div class="status"><span class="dot"></span>online</div>
     </div>
     <div class="hbtns">
+      <button id="graph-btn" class="hbtn label"><span class="full">Memory</span><span class="short">Mem</span></button>
       <button id="admin-btn" class="hbtn label">Admin</button>
       <button id="mcp-btn" class="hbtn label"><span class="full">Connectors</span><span class="short">Connect</span></button>
       <button id="demo-btn" class="hbtn label primary"><span class="full">DB FIX</span><span class="short">DB FIX</span></button>
@@ -1010,6 +1011,7 @@ function adminCloseFn(){
   if(graphSim){graphSim.destroy();graphSim=null;}
 }
 document.getElementById('admin-btn').onclick=adminOpen;
+document.getElementById('graph-btn').onclick=()=>{adminModal.hidden=false;adminSwitchView('graph');};
 document.getElementById('admin-close').onclick=adminCloseFn;
 adminModal.addEventListener('click',e=>{if(e.target===adminModal)adminCloseFn();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!adminModal.hidden)adminCloseFn();});
