@@ -270,9 +270,9 @@ body {
   overflow: hidden; background: var(--surface); }
 #admin-canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
 #admin-canvas.dragging { cursor: grabbing; }
-.graph-tip { position: absolute; pointer-events: none; max-width: 240px; background: var(--bg); border: 1px solid var(--border);
+.graph-tip { position: absolute; pointer-events: none; max-width: 380px; max-height: 340px; overflow-y: auto; background: var(--bg); border: 1px solid var(--border);
   border-radius: 8px; padding: 8px 10px; font-size: 11.5px; line-height: 1.5; box-shadow: 0 8px 24px rgba(0,0,0,.18);
-  opacity: 0; transition: opacity .1s; z-index: 2; }
+  opacity: 0; transition: opacity .1s; z-index: 2; word-wrap: break-word; white-space: pre-wrap; }
 .graph-tip .gt-src { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .5px; margin-top: 3px; }
 .graph-hint { font-size: 10.5px; color: var(--faint); margin-top: 8px; text-align: center; }
 
@@ -827,7 +827,8 @@ async function loadOverview(){
 }
 
 /* Force-directed graph on canvas — Obsidian-style. No external deps. */
-function initGraphSim(canvas,tipEl,data){
+function initGraphSim(canvas,tipEl,data,docMap){
+  docMap=docMap||{};
   const ctx=canvas.getContext('2d');
   const nodes=(data.nodes||[]).map(n=>({...n,x:(Math.random()-0.5)*300,y:(Math.random()-0.5)*300,vx:0,vy:0}));
   const byId=Object.fromEntries(nodes.map(n=>[n.id,n]));
@@ -956,7 +957,8 @@ function initGraphSim(canvas,tipEl,data){
         tipEl.style.opacity=1;
         tipEl.style.left=Math.min((e.clientX-rect.left)+12,rect.width-250)+'px';
         tipEl.style.top=Math.max((e.clientY-rect.top)-10,0)+'px';
-        tipEl.innerHTML=`${esc(n.label)}<div class="gt-src">${esc(n.source)}</div>`;
+        const [fullText,src]=docMap[n.id]||[n.label,n.source];
+        tipEl.innerHTML=`${esc(fullText)}<div class="gt-src">${esc(src)}</div>`;
       } else tipEl.style.opacity=0;
     }
   };
@@ -988,7 +990,10 @@ async function loadGraph(){
       wrap.appendChild(div);
       return;
     }
-    graphSim=initGraphSim(canvas,tip,data);
+    const dr=await fetch('/rag/all?limit=1000');
+    const docData=dr.ok?await dr.json():{documents:[]};
+    const docMap=Object.fromEntries((docData.documents||[]).map(d=>[d.id,[d.text,d.source]]));
+    graphSim=initGraphSim(canvas,tip,data,docMap);
   }catch(e){
     const div=document.createElement('div'); div.className='graph-empty admin-empty';
     div.style.cssText='position:absolute;inset:0;display:grid;place-items:center;margin:20px;';
