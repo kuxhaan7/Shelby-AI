@@ -43,46 +43,63 @@ def read_docx(path: str | Path) -> str:
 
 
 def read_txt(path: str | Path) -> str:
-    """Read plain text file."""
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read()
-    except Exception as e:
-        log.error(f"Error reading TXT {path}: {e}")
-        return ""
+    """Read plain text file with automatic encoding detection."""
+    encodings = ["utf-8", "latin-1", "cp1252", "iso-8859-1", "gb2312", "utf-16"]
+    for encoding in encodings:
+        try:
+            with open(path, "r", encoding=encoding) as f:
+                return f.read()
+        except (UnicodeDecodeError, UnicodeError, LookupError):
+            continue
+    log.error(f"Could not read TXT {path} with any encoding")
+    return ""
 
 
 def read_csv(path: str | Path) -> str:
-    """Read CSV file as text."""
+    """Read CSV file as text with automatic encoding detection."""
     try:
         import pandas as pd
-        df = pd.read_csv(path)
-        return df.to_string()
+        # Try UTF-8 first, then fall back to other encodings
+        encodings = ["utf-8", "latin-1", "cp1252", "iso-8859-1", "gb2312"]
+        for encoding in encodings:
+            try:
+                df = pd.read_csv(path, encoding=encoding)
+                return df.to_string()
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+        log.error(f"Could not read CSV {path} with any encoding")
+        return ""
     except Exception as e:
         log.error(f"Error reading CSV {path}: {e}")
         return ""
 
 
 def read_json(path: str | Path) -> str:
-    """Read JSON file as formatted text."""
-    try:
-        import json
-        with open(path, "r") as f:
-            data = json.load(f)
-        return json.dumps(data, indent=2)
-    except Exception as e:
-        log.error(f"Error reading JSON {path}: {e}")
-        return ""
+    """Read JSON file as formatted text with encoding detection."""
+    import json
+    encodings = ["utf-8", "latin-1", "cp1252", "iso-8859-1"]
+    for encoding in encodings:
+        try:
+            with open(path, "r", encoding=encoding) as f:
+                data = json.load(f)
+            return json.dumps(data, indent=2)
+        except (UnicodeDecodeError, UnicodeError, json.JSONDecodeError, LookupError):
+            continue
+    log.error(f"Could not read JSON {path} with any encoding")
+    return ""
 
 
 def read_markdown(path: str | Path) -> str:
-    """Read Markdown file."""
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read()
-    except Exception as e:
-        log.error(f"Error reading Markdown {path}: {e}")
-        return ""
+    """Read Markdown file with automatic encoding detection."""
+    encodings = ["utf-8", "latin-1", "cp1252", "iso-8859-1"]
+    for encoding in encodings:
+        try:
+            with open(path, "r", encoding=encoding) as f:
+                return f.read()
+        except (UnicodeDecodeError, UnicodeError, LookupError):
+            continue
+    log.error(f"Could not read Markdown {path} with any encoding")
+    return ""
 
 
 def read_file(path: str | Path) -> tuple[str, bool]:
