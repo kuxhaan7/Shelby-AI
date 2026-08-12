@@ -354,27 +354,51 @@ async def stt_diag():
     """Ping ElevenLabs to isolate outbound-network issues from audio-payload issues.
 
     Hits GET /v1/user (auth check, no file), so any failure is auth/network,
-    not payload. Returns status + first bit of body so we can see if the
-    request is even reaching ElevenLabs.
+    not payload. Also reports the proxy env vars, since a Railway-configured
+    HTTPS_PROXY is what would silently redirect our ElevenLabs request to an
+    Anthropic gateway (and produce an Anthropic-shaped auth error).
     """
     key = os.getenv("ELEVENLABS_API_KEY")
-    if not key:
-        return {"ok": False, "reason": "ELEVENLABS_API_KEY not set"}
-    import httpx
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(
-                "https://api.elevenlabs.io/v1/user",
-                headers={"xi-api-key": key},
-            )
-        return {
-            "ok": r.status_code == 200,
-            "status": r.status_code,
-            "server_header": r.headers.get("server"),
-            "body_preview": r.text[:200],
-        }
-    except Exception as exc:
-        return {"ok": False, "reason": f"{type(exc).__name__}: {exc}"}
+    key_summary = None
+    if key:
+        key_summary = {"length": len(key), "prefix": key[:5], "suffix": key[-4:]}
+
+    proxy_env = {
+        var: os.getenv(var)
+        for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy")
+        if os.getenv(var)
+    }
+
+    async def _probe(via_proxy: bool):
+        import httpx
+        try:
+            client_kwargs = {"timeout": 10}
+            if not via_proxy:
+                client_kwargs["proxy"] = None
+                client_kwargs["trust_env"] = False
+            async with httpx.AsyncClient(**client_kwargs) as client:
+                r = await client.get(
+                    "https://api.elevenlabs.io/v1/user",
+                    headers={"xi-api-key": key or ""},
+                )
+            return {
+                "status": r.status_code,
+                "server_header": r.headers.get("server"),
+                "body_preview": r.text[:300],
+            }
+        except Exception as exc:
+            return {"error": f"{type(exc).__name__}: {exc}"}
+
+    with_proxy = await _probe(via_proxy=True)
+    without_proxy = await _probe(via_proxy=False)
+
+    return {
+        "key_set": bool(key),
+        "key_summary": key_summary,
+        "proxy_env": proxy_env,
+        "with_proxy": with_proxy,
+        "without_proxy_bypass": without_proxy,
+    }
 
 
 # ── Voice output (TTS) ───────────────────────────────────────────────────────
