@@ -176,6 +176,16 @@ body {
 .wa-label { font-size: 13px; font-weight: 600; }
 .wa-hint { font-size: 11px; color: var(--muted); }
 
+/* ── Speaker (TTS) button on Shelby replies ────────────────────── */
+.speak { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px;
+  background: transparent; border: 1px solid var(--border); color: var(--muted);
+  font-family: var(--mono); font-size: 11px; padding: 3px 8px; border-radius: 6px;
+  cursor: pointer; transition: all .14s; }
+.speak:hover { border-color: var(--accent); color: var(--fg); }
+.speak.playing { color: var(--accent); border-color: var(--accent); }
+.speak svg { width: 12px; height: 12px; }
+#speak-btn.on { color: var(--accent); border-color: var(--accent); }
+
 /* ── DB FIX dropdown menu ──────────────────────────────────────── */
 .db-fix-menu { position: fixed; top: 60px; right: 16px; z-index: 100; display: flex; flex-direction: column;
   gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; box-shadow: 0 4px 12px rgba(0,0,0,.15);
@@ -321,6 +331,7 @@ body {
       <div class="status"><span class="dot"></span>online</div>
     </div>
     <div class="hbtns">
+      <button id="speak-btn" class="hbtn label" title="Auto-speak Shelby's replies"><span class="full">Speak: off</span><span class="short">Speak</span></button>
       <button id="graph-btn" class="hbtn label"><span class="full">Memory</span><span class="short">Mem</span></button>
       <button id="admin-btn" class="hbtn label">Admin</button>
       <button id="mcp-btn" class="hbtn label"><span class="full">Connectors</span><span class="short">Connect</span></button>
@@ -471,6 +482,16 @@ function add(role,htmlStr,meta){
   const b=document.createElement('div'); b.className='bubble';
   if(role==='shelby')b.innerHTML=htmlStr; else b.textContent=htmlStr; w.appendChild(b);
   if(meta){const m=document.createElement('div');m.className='meta';m.textContent=meta;w.appendChild(m);}
+  if(role==='shelby'){
+    const spoken=b.textContent.trim();
+    if(spoken){
+      const btn=document.createElement('button'); btn.className='speak'; btn.type='button'; btn.title='Play voice';
+      btn.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg><span>Speak</span>`;
+      btn.onclick=()=>playTTS(spoken,btn);
+      b.appendChild(btn);
+      if(autoSpeak) playTTS(spoken,btn);
+    }
+  }
   chat.appendChild(w); sb();
   spring(w);
   return w;
@@ -677,6 +698,49 @@ function fileReport(d){
     <div class="foot">quality score: <b>${s.overall.toFixed(1)}</b> / 100 — ask me to repair it or explain any issue.</div></div>`;
   chat.appendChild(w); sb(); spring(w);
   requestAnimationFrame(()=>setTimeout(()=>w.querySelectorAll('.fill').forEach(f=>{f.style.width=f.dataset.to+'%';}),90));
+}
+
+/* ── Voice output (TTS) ─────────────────────────────────────── */
+let autoSpeak = localStorage.getItem('shelby-autospeak') === '1';
+let currentAudio = null;
+const speakBtn = document.getElementById('speak-btn');
+function refreshSpeakBtn(){
+  speakBtn.classList.toggle('on', autoSpeak);
+  const full = speakBtn.querySelector('.full');
+  if(full) full.textContent = 'Speak: ' + (autoSpeak ? 'on' : 'off');
+}
+refreshSpeakBtn();
+speakBtn.onclick=()=>{
+  autoSpeak = !autoSpeak;
+  localStorage.setItem('shelby-autospeak', autoSpeak ? '1' : '0');
+  refreshSpeakBtn();
+  if(!autoSpeak && currentAudio){ currentAudio.pause(); currentAudio = null; }
+};
+async function playTTS(text, btn){
+  if(!text) return;
+  if(currentAudio){ currentAudio.pause(); currentAudio = null; }
+  const orig = btn ? btn.innerHTML : null;
+  if(btn){ btn.classList.add('playing'); btn.disabled = true; }
+  try{
+    const r = await fetch('/tts', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text})
+    });
+    if(!r.ok){
+      const x = await r.text().catch(()=> '');
+      throw new Error(`${r.status} ${x.slice(0,140)}`);
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    currentAudio = audio;
+    audio.onended = ()=>{ URL.revokeObjectURL(url); if(currentAudio===audio) currentAudio=null; if(btn){ btn.classList.remove('playing'); btn.disabled=false; if(orig) btn.innerHTML=orig; } };
+    audio.onerror = audio.onended;
+    await audio.play();
+  }catch(e){
+    if(btn){ btn.classList.remove('playing'); btn.disabled=false; if(orig) btn.innerHTML=orig; btn.title='Voice failed: ' + String(e); }
+  }
 }
 
 /* ── Voice input (mic → STT) ────────────────────────────────── */

@@ -14,6 +14,7 @@ import anthropic
 from fastapi import BackgroundTasks, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from ..agent import ShelbyAgent
@@ -346,6 +347,30 @@ async def stt(audio: UploadFile = File(...)):
     if not text:
         raise HTTPException(422, "Could not transcribe audio")
     return {"text": text}
+
+
+# ── Voice output (TTS) ───────────────────────────────────────────────────────
+
+class TTSRequest(BaseModel):
+    text: str
+
+
+@app.post("/tts")
+async def tts(req: TTSRequest):
+    """Synthesise Shelby's reply into an MP3 the browser can play."""
+    if not os.getenv("ELEVENLABS_API_KEY"):
+        raise HTTPException(503, "Voice output unavailable (ELEVENLABS_API_KEY not set)")
+    text = (req.text or "").strip()
+    if not text:
+        raise HTTPException(400, "Empty text")
+
+    from ..tts.elevenlabs import synthesise_mp3
+    audio, err = await run_in_threadpool(synthesise_mp3, text)
+    if audio is None:
+        raise HTTPException(502, err or "TTS failed")
+
+    from fastapi.responses import Response
+    return Response(content=audio, media_type="audio/mpeg")
 
 
 # ── File input (upload a CSV → generic data-quality profile) ─────────────────

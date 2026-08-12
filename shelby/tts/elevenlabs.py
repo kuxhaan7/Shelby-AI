@@ -13,8 +13,8 @@ DEFAULT_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
 DEFAULT_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_turbo_v2_5")
 
 
-def synthesise(text: str) -> tuple[bytes | None, str | None]:
-    """Convert text to OGG Opus bytes. Returns (audio_bytes, error_msg)."""
+def synthesise_mp3(text: str) -> tuple[bytes | None, str | None]:
+    """Convert text to MP3 bytes (browser-friendly). Returns (audio_bytes, error_msg)."""
     api_key = os.getenv("ELEVENLABS_API_KEY")
     if not api_key:
         return None, "ELEVENLABS_API_KEY is not set in environment"
@@ -35,12 +35,18 @@ def synthesise(text: str) -> tuple[bytes | None, str | None]:
         mp3_bytes = b"".join(mp3_chunks)
         if not mp3_bytes:
             return None, "ElevenLabs returned empty audio"
+        return mp3_bytes, None
     except Exception as exc:
         log.error("ElevenLabs TTS API error: %s", exc)
         return None, f"ElevenLabs API error: {exc}"
 
-    ogg, err = _mp3_to_ogg(mp3_bytes)
-    return ogg, err
+
+def synthesise(text: str) -> tuple[bytes | None, str | None]:
+    """Convert text to OGG Opus bytes (Telegram voice-ready). Returns (audio_bytes, error_msg)."""
+    mp3_bytes, err = synthesise_mp3(text)
+    if mp3_bytes is None:
+        return None, err
+    return _mp3_to_ogg(mp3_bytes)
 
 
 def _mp3_to_ogg(mp3_bytes: bytes) -> tuple[bytes | None, str | None]:
