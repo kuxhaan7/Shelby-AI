@@ -759,7 +759,12 @@ micBtn.onclick=async()=>{
       try{
         const fd=new FormData(); fd.append('audio',blob,'rec.webm');
         const r=await fetch('/stt',{method:'POST',body:fd}); unthink();
-        if(!r.ok){const x=await r.text().catch(()=>'');throw new Error(`${r.status} ${x.slice(0,120)}`);}
+        if(!r.ok){
+          let detail='';
+          try{const j=await r.json(); detail = j.detail||JSON.stringify(j);}
+          catch{ detail = await r.text().catch(()=>''); }
+          throw new Error(`${r.status} ${detail}`);
+        }
         const {text}=await r.json();
         loading=false; setBusy(false);
         input.value=text; send();

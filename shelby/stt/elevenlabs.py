@@ -47,11 +47,12 @@ def transcribe(audio_bytes: bytes, mime_type: str = "audio/webm") -> tuple[str |
         result = client.speech_to_text.convert(
             file=(filename, buf, base_mime),
             model_id="scribe_v1",
+            file_format="other",
         )
         text = (result.text or "").strip()
         if not text:
             return None, "ElevenLabs returned an empty transcript (recording may be silent or too short)"
         return text, None
     except Exception as exc:
-        log.warning("ElevenLabs STT failed: %s", exc)
-        return None, f"ElevenLabs STT error: {exc}"
+        log.exception("ElevenLabs STT failed (mime=%s ext=%s size=%d)", base_mime, ext, len(audio_bytes))
+        return None, f"{type(exc).__name__}: {str(exc)[:400]}"

@@ -349,6 +349,34 @@ async def stt(audio: UploadFile = File(...)):
     return {"text": text}
 
 
+@app.get("/stt/diag")
+async def stt_diag():
+    """Ping ElevenLabs to isolate outbound-network issues from audio-payload issues.
+
+    Hits GET /v1/user (auth check, no file), so any failure is auth/network,
+    not payload. Returns status + first bit of body so we can see if the
+    request is even reaching ElevenLabs.
+    """
+    key = os.getenv("ELEVENLABS_API_KEY")
+    if not key:
+        return {"ok": False, "reason": "ELEVENLABS_API_KEY not set"}
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                "https://api.elevenlabs.io/v1/user",
+                headers={"xi-api-key": key},
+            )
+        return {
+            "ok": r.status_code == 200,
+            "status": r.status_code,
+            "server_header": r.headers.get("server"),
+            "body_preview": r.text[:200],
+        }
+    except Exception as exc:
+        return {"ok": False, "reason": f"{type(exc).__name__}: {exc}"}
+
+
 # ── Voice output (TTS) ───────────────────────────────────────────────────────
 
 class TTSRequest(BaseModel):
