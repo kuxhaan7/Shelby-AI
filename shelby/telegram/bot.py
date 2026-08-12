@@ -200,9 +200,9 @@ async def handle_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     voice_file = await update.message.voice.get_file()
     audio_bytes = bytes(await voice_file.download_as_bytearray())
 
-    text = transcribe(audio_bytes)
+    text, err = transcribe(audio_bytes, "audio/ogg")
     if not text:
-        await update.message.reply_text("Couldn't understand that. Try again?")
+        await update.message.reply_text(f"Couldn't transcribe that: {err or 'unknown error'}")
         return
 
     await _process(update, text, reply_with_voice=True)

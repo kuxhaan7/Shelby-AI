@@ -343,9 +343,9 @@ async def stt(audio: UploadFile = File(...)):
 
     from ..stt.elevenlabs import transcribe
     mime = audio.content_type or "audio/webm"
-    text = await run_in_threadpool(transcribe, data, mime)
+    text, err = await run_in_threadpool(transcribe, data, mime)
     if not text:
-        raise HTTPException(422, "Could not transcribe audio")
+        raise HTTPException(422, err or "Could not transcribe audio")
     return {"text": text}
 
 
