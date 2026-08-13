@@ -1,0 +1,15 @@
+# Local Terraform state and cache — never commit these
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# tfvars can contain project IDs, image tags, etc.
+# The .example file is fine to commit; the real one isn't.
+*.tfvars
+!*.tfvars.example
+
+# GCP service account JSONs — never commit
+*.json
