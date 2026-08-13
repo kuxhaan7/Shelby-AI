@@ -61,10 +61,12 @@ it's done, Terraform prints the outputs — the important one is
 `service_url`. Open it in a browser. You'll see the GCP "hello" placeholder
 page, which is expected: Shelby isn't built and pushed yet.
 
-## 5. Populate secrets
+## 5. Rotate the placeholder secrets to real values
 
-Terraform created empty Secret Manager slots but did not put any secret
-values in state (that's the safe thing). Populate each one manually:
+Terraform bootstrapped every secret with a `REPLACE_ME` placeholder so
+Cloud Run could start. Now overwrite each one with your real key. This
+creates a new version in Secret Manager; Cloud Run picks up the new
+`latest` automatically on the next revision.
 
 ```bash
 # Repeat for every secret you actually use
@@ -73,7 +75,9 @@ printf 'sk_your-elevenlabs-key' | gcloud secrets versions add ELEVENLABS_API_KEY
 ```
 
 The list of slots Terraform created is in `variables.tf` under
-`managed_secrets`.
+`managed_secrets`. Real secret values never enter Terraform state —
+`ignore_changes = [secret_data]` on the placeholder version means re-apply
+won't overwrite whatever you set with gcloud.
 
 ## 6. Build and push the Shelby container
 

@@ -97,6 +97,27 @@ resource "google_secret_manager_secret" "shelby" {
   depends_on = [google_project_service.enabled]
 }
 
+# Bootstrap placeholder version so Cloud Run can resolve `latest` on the very
+# first apply. Without this, the Secret Manager slot exists but has zero
+# versions, and Cloud Run refuses to create the service because
+# `projects/…/secrets/X/versions/latest was not found`.
+#
+# Rotate to a real value out-of-band:
+#     printf 'sk-ant-your-real-key' | gcloud secrets versions add ANTHROPIC_API_KEY --data-file=-
+# That creates version 2, which becomes the new `latest`. Cloud Run picks it
+# up on the next revision automatically. Terraform's placeholder version 1
+# stays put (harmless) and `ignore_changes` on secret_data means re-apply
+# never tries to overwrite whatever's there.
+resource "google_secret_manager_secret_version" "placeholder" {
+  for_each    = var.managed_secrets
+  secret      = google_secret_manager_secret.shelby[each.value].id
+  secret_data = "REPLACE_ME"
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
+
 resource "google_secret_manager_secret_iam_member" "shelby_access" {
   for_each  = var.managed_secrets
   secret_id = google_secret_manager_secret.shelby[each.value].id
@@ -176,6 +197,7 @@ resource "google_cloud_run_v2_service" "shelby" {
 
   depends_on = [
     google_secret_manager_secret_iam_member.shelby_access,
+    google_secret_manager_secret_version.placeholder,
     google_storage_bucket_iam_member.data_access,
   ]
 }
