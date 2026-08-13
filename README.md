@@ -2,7 +2,7 @@
 
 Shelby is a production AI agent built on the Claude API. It does the core work of a Forward-Deployed Engineer: take a real, messy problem, usually broken enterprise data, and fix it from start to finish. It runs as a single deployed service that exposes a web chat interface and a Telegram bot, backed by tool use, retrieval-augmented memory, a data-quality repair loop, and a LangChain evaluation suite, deployed on Railway.
 
-Live demo: https://shelby-ai-production.up.railway.app
+Live demo: https://shelby.up.railway.app
 Author: [Kushaan Kaushik](https://github.com/kuxhaan7) ([LinkedIn](https://linkedin.com/in/kushaankaushik))
 
 ## What it does
