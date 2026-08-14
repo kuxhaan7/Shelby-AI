@@ -33,6 +33,30 @@ variable "shelby_model" {
   default     = "claude-opus-4-7"
 }
 
+variable "custom_domain" {
+  description = <<-EOT
+    Custom domain to map to Cloud Run (e.g., "shelby.is-a.dev").
+    Leave empty to skip — the Cloud Run *.run.app URL is always available.
+
+    Requires two things before you set this and apply:
+      1. DNS: a CNAME record for this domain pointing to ghs.googlehosted.com
+      2. Google Search Console: domain verified for the ADC account
+    See docs/GCP_MIGRATION.md for the walkthrough.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "google_site_verification" {
+  description = <<-EOT
+    Value for the <meta name="google-site-verification"> tag that Shelby
+    injects into index.html. Grab it from Google Search Console when you
+    add the domain there. Not a secret — this is a public HTML meta tag.
+  EOT
+  type        = string
+  default     = ""
+}
+
 # ── Secrets ─────────────────────────────────────────────────────────────────
 # Terraform CREATES the Secret Manager slot but does NOT put the value in
 # state. You populate the value out-of-band with `gcloud secrets versions add`

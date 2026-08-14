@@ -167,6 +167,16 @@ resource "google_cloud_run_v2_service" "shelby" {
         value = "/data/chroma"
       }
 
+      # Optional — set only when we need to prove domain ownership to Google
+      # Search Console for the Cloud Run domain mapping. Not a secret.
+      dynamic "env" {
+        for_each = var.google_site_verification != "" ? [var.google_site_verification] : []
+        content {
+          name  = "GOOGLE_SITE_VERIFICATION"
+          value = env.value
+        }
+      }
+
       dynamic "env" {
         for_each = var.managed_secrets
         content {
@@ -209,4 +219,28 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
   location = google_cloud_run_v2_service.shelby.location
   role     = "roles/run.invoker"
   member   = "allUsers"
+}
+
+# ── Custom domain mapping ───────────────────────────────────────────────────
+# Only created when var.custom_domain is set. Requires the domain to be
+# verified in Google Search Console for the account running terraform apply,
+# and a CNAME to ghs.googlehosted.com already in place. GCP issues a free
+# managed TLS cert automatically once both are satisfied — takes ~10 min.
+#
+# Note: the domain-mapping API is Cloud Run v1 only; there is no v2
+# equivalent yet, but it maps cleanly onto the v2 service by name.
+
+resource "google_cloud_run_domain_mapping" "shelby" {
+  count = var.custom_domain != "" ? 1 : 0
+
+  name     = var.custom_domain
+  location = var.region
+
+  metadata {
+    namespace = var.project_id
+  }
+
+  spec {
+    route_name = google_cloud_run_v2_service.shelby.name
+  }
 }

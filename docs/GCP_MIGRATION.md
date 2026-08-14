@@ -74,6 +74,42 @@ image. Public invoker binding on so the URL loads in a browser.
   Cloud Run rolls to real Shelby.
 - (Optional) Migrate Terraform state to the GCS bucket for portability.
 
+### Custom domain — shelby.is-a.dev
+
+Registering a free `.is-a.dev` subdomain via
+[is-a-dev/register](https://github.com/is-a-dev/register) so the
+public URL isn't `shelby-xa3v4wt7na-uc.a.run.app`.
+
+**PR filed** — 2026-08-13
+`is-a-dev/register#47205` requesting `shelby.is-a.dev`, CNAME to
+`ghs.googlehosted.com`. First submission failed CI because the JSON
+used `record` (singular) instead of `records` (plural) per the schema;
+pushed a fix on the same branch and CI is passing. Waiting on maintainer
+review (typical 1–3 days).
+
+**Terraform prepared for the mapping** — this commit
+- `var.custom_domain` gates a `google_cloud_run_domain_mapping` resource
+  so it's a no-op until we set it. Once DNS is live and the domain is
+  verified in Google Search Console, setting `custom_domain =
+  "shelby.is-a.dev"` in tfvars and running apply issues a managed
+  TLS cert automatically.
+- `var.google_site_verification` plumbs an env var into the container.
+  The `/` route reads it and injects the `<meta
+  name="google-site-verification">` tag Google Search Console needs to
+  verify domain ownership — no code push required, just a re-apply.
+
+**Post-merge checklist (once the PR merges):**
+1. Wait ~15 min for is-a.dev DNS to propagate.
+2. Add `shelby.is-a.dev` as a property in Google Search Console →
+   pick HTML meta tag verification method → copy the code.
+3. Set `google_site_verification = "..."` in `terraform.tfvars` and
+   `terraform apply`. Cloud Run rolls a new revision serving the tag.
+4. Click **Verify** in Search Console.
+5. Set `custom_domain = "shelby.is-a.dev"` in `terraform.tfvars` and
+   `terraform apply` again. Domain mapping is created; managed cert
+   issues in ~10 min.
+6. `https://shelby.is-a.dev` serves Shelby with a real TLS cert.
+
 ## Phase 2 — Multi-tenant refactor
 
 Not started.

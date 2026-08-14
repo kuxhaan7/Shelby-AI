@@ -27,3 +27,11 @@ output "secret_names" {
   description = "Secret Manager slots created for Shelby. Populate with `gcloud secrets versions add`."
   value       = [for s in google_secret_manager_secret.shelby : s.secret_id]
 }
+
+output "custom_domain_status" {
+  description = "Custom domain mapping status (empty until var.custom_domain is set)."
+  value = length(google_cloud_run_domain_mapping.shelby) > 0 ? {
+    domain     = google_cloud_run_domain_mapping.shelby[0].name
+    dns_target = "CNAME → ghs.googlehosted.com"
+  } : null
+}

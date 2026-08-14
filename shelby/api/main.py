@@ -107,6 +107,16 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/", include_in_schema=False)
 async def index():
+    # If GOOGLE_SITE_VERIFICATION is set, inject the meta tag Google Search
+    # Console needs to verify domain ownership. Kept out of the static file
+    # so the value is env-configurable per deploy (Cloud Run, Railway, local).
+    verification = os.getenv("GOOGLE_SITE_VERIFICATION")
+    if verification:
+        from fastapi.responses import HTMLResponse
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        tag = f'<meta name="google-site-verification" content="{verification}">'
+        html = html.replace("</head>", f"  {tag}\n</head>", 1)
+        return HTMLResponse(html)
     return FileResponse(STATIC_DIR / "index.html")
 
 
