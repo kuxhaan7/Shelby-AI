@@ -21,4 +21,8 @@ COPY --from=builder /install /usr/local
 WORKDIR /app
 COPY . .
 
-CMD ["python", "-m", "shelby.telegram.bot"]
+# FastAPI serves the web UI AND launches the Telegram bot as a background
+# task inside the same event loop (see shelby/api/main.py lifespan). So the
+# right entrypoint on both Railway and Cloud Run is uvicorn, not the bot
+# module. PORT is set by Cloud Run and Railway; default to 8000 for local.
+CMD ["sh", "-c", "uvicorn shelby.api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
