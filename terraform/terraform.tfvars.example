@@ -1,0 +1,30 @@
+# Copy to terraform.tfvars and fill in for your project.
+# terraform.tfvars is gitignored; this .example file is not.
+
+project_id = "your-gcp-project-id"
+region     = "us-central1"
+
+# ── Tenants ────────────────────────────────────────────────────────────────
+# One Shelby stack (Cloud Run service + isolated bucket + namespaced secrets)
+# per entry. Start with a single "default" tenant; add customer ids later.
+tenants = ["default"]
+
+# Example multi-tenant deploy — three fully isolated Shelbys:
+# tenants = ["default", "acme", "initech"]
+
+# ── Image ──────────────────────────────────────────────────────────────────
+# Leave 'image' commented on the first apply so tenants come up on the
+# hello container. Then build and push Shelby to Artifact Registry (see
+# README) and set the real tag here.
+#
+# image = "us-central1-docker.pkg.dev/your-gcp-project-id/shelby/shelby:latest"
+
+# ── Optional per-tenant custom domains ────────────────────────────────────
+# custom_domains = {
+#   default = "shelby.is-a.dev"
+#   acme    = "acme.shelby.is-a.dev"
+# }
+#
+# google_site_verifications = {
+#   default = "google-site-verification=XXXXXXX"
+# }

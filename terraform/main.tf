@@ -1,7 +1,6 @@
-# ── APIs ────────────────────────────────────────────────────────────────────
-# Every GCP service Shelby touches has to be explicitly enabled on the project
-# before Terraform can create resources against it. Do this once, up-front, so
-# later resource blocks aren't racing an unenabled API.
+# ── Shared: APIs ────────────────────────────────────────────────────────────
+# Every GCP service any tenant might touch is enabled once at the project
+# level. Cheaper and cleaner than re-enabling per tenant.
 
 locals {
   required_apis = [
@@ -21,10 +20,7 @@ resource "google_project_service" "enabled" {
   disable_on_destroy         = false
 }
 
-# ── Terraform state bucket ──────────────────────────────────────────────────
-# Created on the first apply so backend.tf can point at it on the second
-# init. Versioning on so a bad apply doesn't erase history irreversibly.
-
+# ── Shared: Terraform state bucket ──────────────────────────────────────────
 resource "google_storage_bucket" "tfstate" {
   name                        = "shelby-tfstate-${var.project_id}"
   location                    = var.region
@@ -42,205 +38,44 @@ resource "google_storage_bucket" "tfstate" {
   depends_on = [google_project_service.enabled]
 }
 
-# ── Data bucket (SHELBY_DATA_DIR) ───────────────────────────────────────────
-# Cloud Run mounts this as a filesystem volume via gcsfuse so ChromaDB, learned
-# skills, scheduled tasks, and the usage log all survive redeploys — same role
-# the Railway volume plays today.
-
-resource "google_storage_bucket" "data" {
-  name                        = "${var.service_name}-data-${var.project_id}"
-  location                    = var.region
-  force_destroy               = false
-  uniform_bucket_level_access = true
-
-  depends_on = [google_project_service.enabled]
-}
-
-# ── Artifact Registry (container images) ────────────────────────────────────
+# ── Shared: Artifact Registry ───────────────────────────────────────────────
+# One Docker repo, one Shelby image, all tenants pull from it. Tenants share
+# code, isolate data.
 resource "google_artifact_registry_repository" "shelby" {
   location      = var.region
-  repository_id = var.service_name
+  repository_id = "shelby"
   format        = "DOCKER"
-  description   = "Shelby container images"
+  description   = "Shelby container images (shared across tenants)"
 
   depends_on = [google_project_service.enabled]
 }
 
-# ── Service account for the Cloud Run service ───────────────────────────────
-# Least-privilege: only what Shelby needs to read its secrets and read/write
-# its data bucket. No broad project-level roles.
-
-resource "google_service_account" "shelby" {
-  account_id   = "${var.service_name}-runtime"
-  display_name = "Shelby Cloud Run runtime"
-}
-
-resource "google_storage_bucket_iam_member" "data_access" {
-  bucket = google_storage_bucket.data.name
-  role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${google_service_account.shelby.email}"
-}
-
-# ── Secret Manager slots ────────────────────────────────────────────────────
-# Terraform creates the SLOT for each secret so Cloud Run can reference it.
-# The VALUE is set out-of-band with `gcloud secrets versions add` so it never
-# lands in Terraform state. See README section "Populating secrets".
-
-resource "google_secret_manager_secret" "shelby" {
-  for_each  = var.managed_secrets
-  secret_id = each.value
-
-  replication {
-    auto {}
-  }
-
-  depends_on = [google_project_service.enabled]
-}
-
-# Bootstrap placeholder version so Cloud Run can resolve `latest` on the very
-# first apply. Without this, the Secret Manager slot exists but has zero
-# versions, and Cloud Run refuses to create the service because
-# `projects/…/secrets/X/versions/latest was not found`.
+# ── Per-tenant stack ────────────────────────────────────────────────────────
+# One module call per tenant. Each call materializes a full isolated Shelby:
+# runtime SA, data bucket, namespaced Secret Manager slots, Cloud Run service,
+# and (optionally) a custom domain mapping.
 #
-# Rotate to a real value out-of-band:
-#     printf 'sk-ant-your-real-key' | gcloud secrets versions add ANTHROPIC_API_KEY --data-file=-
-# That creates version 2, which becomes the new `latest`. Cloud Run picks it
-# up on the next revision automatically. Terraform's placeholder version 1
-# stays put (harmless) and `ignore_changes` on secret_data means re-apply
-# never tries to overwrite whatever's there.
-resource "google_secret_manager_secret_version" "placeholder" {
-  for_each    = var.managed_secrets
-  secret      = google_secret_manager_secret.shelby[each.value].id
-  secret_data = "REPLACE_ME"
+# Adding a tenant: append the id to var.tenants and terraform apply. Removing:
+# drop the id and apply — Terraform destroys just that tenant's resources.
 
-  lifecycle {
-    ignore_changes = [secret_data]
-  }
-}
+module "tenant" {
+  for_each = toset(var.tenants)
+  source   = "./modules/tenant"
 
-resource "google_secret_manager_secret_iam_member" "shelby_access" {
-  for_each  = var.managed_secrets
-  secret_id = google_secret_manager_secret.shelby[each.value].id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.shelby.email}"
-}
+  tenant_id       = each.key
+  project_id      = var.project_id
+  region          = var.region
+  image           = var.image
+  shelby_model    = var.shelby_model
+  managed_secrets = var.managed_secrets
 
-# ── Cloud Run service ───────────────────────────────────────────────────────
-resource "google_cloud_run_v2_service" "shelby" {
-  name     = var.service_name
-  location = var.region
-
-  template {
-    service_account = google_service_account.shelby.email
-
-    scaling {
-      min_instance_count = 0
-      max_instance_count = 2
-    }
-
-    containers {
-      image = var.image
-
-      ports {
-        container_port = 8000
-      }
-
-      resources {
-        limits = {
-          cpu    = "1"
-          memory = "1Gi"
-        }
-      }
-
-      env {
-        name  = "SHELBY_MODEL"
-        value = var.shelby_model
-      }
-
-      env {
-        name  = "SHELBY_DATA_DIR"
-        value = "/data"
-      }
-
-      env {
-        name  = "CHROMA_PERSIST_DIR"
-        value = "/data/chroma"
-      }
-
-      # Optional — set only when we need to prove domain ownership to Google
-      # Search Console for the Cloud Run domain mapping. Not a secret.
-      dynamic "env" {
-        for_each = var.google_site_verification != "" ? [var.google_site_verification] : []
-        content {
-          name  = "GOOGLE_SITE_VERIFICATION"
-          value = env.value
-        }
-      }
-
-      dynamic "env" {
-        for_each = var.managed_secrets
-        content {
-          name = env.value
-          value_source {
-            secret_key_ref {
-              secret  = google_secret_manager_secret.shelby[env.value].secret_id
-              version = "latest"
-            }
-          }
-        }
-      }
-
-      volume_mounts {
-        name       = "data"
-        mount_path = "/data"
-      }
-    }
-
-    volumes {
-      name = "data"
-      gcs {
-        bucket    = google_storage_bucket.data.name
-        read_only = false
-      }
-    }
-  }
+  # Per-tenant maps default to empty — a tenant only gets a custom domain or
+  # verification code if you set one explicitly.
+  custom_domain            = try(var.custom_domains[each.key], "")
+  google_site_verification = try(var.google_site_verifications[each.key], "")
 
   depends_on = [
-    google_secret_manager_secret_iam_member.shelby_access,
-    google_secret_manager_secret_version.placeholder,
-    google_storage_bucket_iam_member.data_access,
+    google_project_service.enabled,
+    google_artifact_registry_repository.shelby,
   ]
-}
-
-# Make the service reachable without auth so the web UI works from a browser.
-# For a customer deployment you'd remove this and put an identity in front.
-resource "google_cloud_run_v2_service_iam_member" "public" {
-  name     = google_cloud_run_v2_service.shelby.name
-  location = google_cloud_run_v2_service.shelby.location
-  role     = "roles/run.invoker"
-  member   = "allUsers"
-}
-
-# ── Custom domain mapping ───────────────────────────────────────────────────
-# Only created when var.custom_domain is set. Requires the domain to be
-# verified in Google Search Console for the account running terraform apply,
-# and a CNAME to ghs.googlehosted.com already in place. GCP issues a free
-# managed TLS cert automatically once both are satisfied — takes ~10 min.
-#
-# Note: the domain-mapping API is Cloud Run v1 only; there is no v2
-# equivalent yet, but it maps cleanly onto the v2 service by name.
-
-resource "google_cloud_run_domain_mapping" "shelby" {
-  count = var.custom_domain != "" ? 1 : 0
-
-  name     = var.custom_domain
-  location = var.region
-
-  metadata {
-    namespace = var.project_id
-  }
-
-  spec {
-    route_name = google_cloud_run_v2_service.shelby.name
-  }
 }

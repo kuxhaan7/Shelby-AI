@@ -112,7 +112,88 @@ review (typical 1–3 days).
 
 ## Phase 2 — Multi-tenant refactor
 
-Not started.
+**Goal:** one `terraform apply` stands up N fully isolated Shelby
+deployments. Tenants share the container image; everything stateful is
+isolated with its own IAM boundary.
+
+### Design decision: per-tenant secrets, not shared
+
+Two models were on the table:
+
+- **Shared keys** — one project-wide `ANTHROPIC_API_KEY`, every tenant
+  uses it. Cheaper, simpler, but every tenant's usage hits one bill and
+  one rate limit, and a compromised tenant leaks the key for everyone.
+- **Per-tenant keys** — `acme_ANTHROPIC_API_KEY`,
+  `initech_ANTHROPIC_API_KEY`. Each customer brings their own Anthropic
+  contract.
+
+Went with **per-tenant**. It's the model a marquee enterprise customer
+actually wants (their own contract, their own rate limits, their own
+blast radius), and it costs no extra implementation work — the secret
+IDs are just namespaced with the tenant id.
+
+### Isolation model
+
+| Resource | Naming | Boundary |
+|----------|--------|----------|
+| Cloud Run service | `shelby-<tenant>` | separate service + URL |
+| Data bucket | `shelby-data-<tenant>-<project>` | bucket-scoped `objectAdmin` |
+| Runtime SA | `shelby-<tenant>-runtime` | one SA per tenant |
+| Secrets | `<tenant>_ANTHROPIC_API_KEY` | `secretAccessor` scoped to own set |
+
+A tenant's service account holds `objectAdmin` on exactly one bucket and
+`secretAccessor` on exactly its own namespaced secrets. A fully
+compromised tenant container cannot read another tenant's data or keys —
+the grant simply doesn't exist.
+
+Shared at the root module: enabled APIs, the Artifact Registry repo (one
+image, all tenants), and the tfstate bucket.
+
+### Milestones
+
+**Refactored into `modules/tenant`** — this commit
+- `terraform/modules/tenant/` holds the full per-tenant stack.
+- Root `main.tf` iterates `for_each = toset(var.tenants)`.
+- `tenant_id` has a regex validation so a malformed id fails at plan
+  time rather than producing invalid GCP resource names.
+- Cloud Run gets `SHELBY_TENANT_ID` as an env var — unused by the app
+  today, groundwork for Phase 4's per-tenant data-access policies.
+- Per-tenant custom domains and Search Console codes via
+  `custom_domains` / `google_site_verifications` maps keyed by tenant id.
+- `scripts/migrate_secrets.sh` copies values from the old flat secret
+  names into the namespaced ones so the refactor costs no re-pasting.
+
+**Verified offline** — `terraform fmt -check -recursive` passes; module
+resolution succeeds; root/module variable and output wiring cross-checked
+(8 vars and 5 outputs match on both sides, no orphan references to the
+deleted flat resources). Full `terraform validate` needs the provider
+schema from `registry.terraform.io`, which this dev environment's proxy
+blocks — run `terraform init && terraform validate` locally to confirm
+against the real schema before applying.
+
+### One-time migration cost
+
+The refactor renames the existing single-tenant resources:
+
+| Before | After |
+|--------|-------|
+| `shelby` (Cloud Run) | `shelby-default` |
+| `shelby-data-<project>` | `shelby-data-default-<project>` |
+| `ANTHROPIC_API_KEY` | `default_ANTHROPIC_API_KEY` |
+
+So the first apply after this change **destroys and recreates** the
+service — the `*.run.app` URL changes. Acceptable right now because the
+is-a.dev domain isn't live yet; once it is, the domain mapping makes the
+underlying URL irrelevant.
+
+**Apply order:**
+1. `terraform apply` — creates `shelby-default` + namespaced secrets
+   (placeholders), destroys the old flat resources.
+2. `./scripts/migrate_secrets.sh default` — copies real key values into
+   the namespaced slots.
+3. Force a new revision so the container picks up the values.
+4. Confirm the new URL works, then delete the old flat secrets (the
+   script prints the exact commands).
 
 ## Phase 3 — Agent-managed Terraform
 

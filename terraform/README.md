@@ -57,27 +57,54 @@ terraform apply    # type 'yes' when it asks
 ```
 
 This takes 3–5 minutes the first time (most of it is enabling APIs). When
-it's done, Terraform prints the outputs — the important one is
-`service_url`. Open it in a browser. You'll see the GCP "hello" placeholder
-page, which is expected: Shelby isn't built and pushed yet.
+it's done, Terraform prints a `tenants` map, one entry per tenant:
+
+```bash
+terraform output tenants
+# {
+#   "default" = {
+#     "service_url" = "https://shelby-default-xxxx-uc.a.run.app"
+#     "data_bucket" = "shelby-data-default-<project>"
+#     ...
+#   }
+# }
+
+# Single value, no quotes:
+terraform output -json tenants | jq -r '.default.service_url'
+```
+
+Open that URL. You'll see the GCP "hello" placeholder page, which is
+expected: Shelby isn't built and pushed yet.
 
 ## 5. Rotate the placeholder secrets to real values
 
 Terraform bootstrapped every secret with a `REPLACE_ME` placeholder so
-Cloud Run could start. Now overwrite each one with your real key. This
-creates a new version in Secret Manager; Cloud Run picks up the new
-`latest` automatically on the next revision.
+Cloud Run could start. Now overwrite each one with your real key.
+
+**Secret IDs are namespaced per tenant.** The container still sees
+`ANTHROPIC_API_KEY`; the Secret Manager slot underneath is
+`<tenant>_ANTHROPIC_API_KEY`. That's what keeps tenant A from reading
+tenant B's keys.
 
 ```bash
-# Repeat for every secret you actually use
-printf 'sk-ant-your-key' | gcloud secrets versions add ANTHROPIC_API_KEY --data-file=-
-printf 'sk_your-elevenlabs-key' | gcloud secrets versions add ELEVENLABS_API_KEY --data-file=-
+# Repeat for every secret you actually use, per tenant
+printf 'sk-ant-your-key' | gcloud secrets versions add default_ANTHROPIC_API_KEY --data-file=-
+printf 'sk_your-elevenlabs-key' | gcloud secrets versions add default_ELEVENLABS_API_KEY --data-file=-
 ```
 
-The list of slots Terraform created is in `variables.tf` under
-`managed_secrets`. Real secret values never enter Terraform state —
-`ignore_changes = [secret_data]` on the placeholder version means re-apply
-won't overwrite whatever you set with gcloud.
+Use `printf`, not `echo` — `echo` appends a newline that some APIs reject.
+
+The env-var names are in `variables.tf` under `managed_secrets`. Real
+values never enter Terraform state; `ignore_changes = [secret_data]` on
+the placeholder version means re-apply won't clobber what you set.
+
+**Migrating from a single-tenant deploy?** Don't re-paste anything —
+`scripts/migrate_secrets.sh` copies values from the old flat names into
+the namespaced ones:
+
+```bash
+./scripts/migrate_secrets.sh default
+```
 
 ## 6. Build and push the Shelby container
 
@@ -109,8 +136,8 @@ Then:
 terraform apply
 ```
 
-Cloud Run swaps to the new image with a rolling update. Reopen
-`service_url` — real Shelby.
+Cloud Run swaps every tenant to the new image with a rolling update.
+Reopen the tenant's `service_url` — real Shelby.
 
 ## 8. Migrate state to GCS (recommended)
 
@@ -131,25 +158,80 @@ Terraform already created:
 Now anyone with GCP access can `terraform apply` from anywhere and they
 share the same state.
 
+## Multi-tenancy
+
+The root module iterates `var.tenants` and calls `modules/tenant` once
+per entry. Each call stands up a fully isolated Shelby:
+
+| Resource | Naming | Isolation |
+|----------|--------|-----------|
+| Cloud Run service | `shelby-<tenant>` | separate service, separate URL |
+| Data bucket | `shelby-data-<tenant>-<project>` | bucket-scoped IAM |
+| Runtime service account | `shelby-<tenant>-runtime` | one SA per tenant |
+| Secrets | `<tenant>_ANTHROPIC_API_KEY` | `secretAccessor` on own set only |
+
+Tenants **share** the container image (one build, one Artifact Registry
+repo) and **isolate** everything stateful. A tenant's service account has
+`objectAdmin` on exactly one bucket and `secretAccessor` on exactly its
+own namespaced secrets — so even a fully compromised tenant container
+cannot read another tenant's data or API keys.
+
+### Add a tenant
+
+```hcl
+# terraform.tfvars
+tenants = ["default", "acme"]
+```
+
+```bash
+terraform apply
+```
+
+That's the whole onboarding flow. Terraform creates acme's service,
+bucket, SA, and 11 namespaced secret slots. Then populate acme's keys:
+
+```bash
+printf 'sk-ant-acme-key' | gcloud secrets versions add acme_ANTHROPIC_API_KEY --data-file=-
+```
+
+### Remove a tenant
+
+Drop the id from `tenants` and apply. Terraform destroys only that
+tenant's resources; everyone else is untouched. The data bucket has
+`force_destroy = false`, so a bucket with objects in it will refuse to
+delete — deliberate, so a typo in the tenant list can't wipe customer
+data.
+
+### Per-tenant custom domains
+
+```hcl
+custom_domains = {
+  default = "shelby.is-a.dev"
+  acme    = "acme.shelby.is-a.dev"
+}
+```
+
+Each domain still needs its own CNAME to `ghs.googlehosted.com` and
+Search Console verification. See `docs/GCP_MIGRATION.md`.
+
 ## Common commands
 
 ```bash
-terraform plan                          # show what would change
-terraform apply                         # make it so
-terraform destroy                       # tear it all down (careful)
-terraform output                        # reprint all outputs
-terraform output -raw service_url       # single value, no quotes
-terraform state list                    # every resource Terraform manages
-terraform state show <resource>         # detail on one resource
+terraform plan                                          # show what would change
+terraform apply                                         # make it so
+terraform destroy                                       # tear it all down (careful)
+terraform output tenants                                # all tenants + their URLs
+terraform output -json tenants | jq -r '.default.service_url'
+terraform state list                                    # every managed resource
+terraform state show 'module.tenant["acme"].google_cloud_run_v2_service.tenant'
 ```
 
-## What comes next (Phase 2+)
+## What comes next (Phase 3+)
 
-- Refactor into a reusable `tenant` module and iterate over
-  `var.tenants` to stand up N isolated Shelby instances at once.
-- Add per-tenant IAM so tenant A's service account cannot see tenant B's
-  bucket or secrets.
 - Wire Shelby's own tool loop to `terraform_plan` / `terraform_apply` so
   the agent can propose infra changes for human approval.
+- Per-tenant data-access policies inside the app: scope RAG queries and
+  memory reads by `SHELBY_TENANT_ID` (already plumbed as an env var), and
+  write an audit log per tenant.
 
-See the top-level plan for the sequencing.
+See `docs/GCP_MIGRATION.md` for the sequencing.

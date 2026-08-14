@@ -1,37 +1,22 @@
-output "service_url" {
-  description = "The URL Cloud Run assigned to Shelby. Open this in a browser."
-  value       = google_cloud_run_v2_service.shelby.uri
+output "tenants" {
+  description = "Map of tenant_id → per-tenant outputs (service URL, bucket, SA, secret names, custom domain)."
+  value = {
+    for id, m in module.tenant : id => {
+      service_url     = m.service_url
+      data_bucket     = m.data_bucket
+      service_account = m.service_account
+      secret_names    = m.secret_names
+      custom_domain   = m.custom_domain
+    }
+  }
 }
 
 output "image_repo" {
-  description = "Push Shelby's container here (docker push <this>/shelby:latest)."
+  description = "Push Shelby's container here (docker push <this>/shelby:latest). One repo shared across every tenant."
   value       = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.shelby.repository_id}"
-}
-
-output "data_bucket" {
-  description = "GCS bucket mounted at /data inside the container."
-  value       = google_storage_bucket.data.name
 }
 
 output "tfstate_bucket" {
   description = "GCS bucket for remote Terraform state (paste into backend.tf)."
   value       = google_storage_bucket.tfstate.name
-}
-
-output "service_account" {
-  description = "Shelby's runtime service account email."
-  value       = google_service_account.shelby.email
-}
-
-output "secret_names" {
-  description = "Secret Manager slots created for Shelby. Populate with `gcloud secrets versions add`."
-  value       = [for s in google_secret_manager_secret.shelby : s.secret_id]
-}
-
-output "custom_domain_status" {
-  description = "Custom domain mapping status (empty until var.custom_domain is set)."
-  value = length(google_cloud_run_domain_mapping.shelby) > 0 ? {
-    domain     = google_cloud_run_domain_mapping.shelby[0].name
-    dns_target = "CNAME → ghs.googlehosted.com"
-  } : null
 }

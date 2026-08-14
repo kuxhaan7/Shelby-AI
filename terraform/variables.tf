@@ -4,66 +4,57 @@ variable "project_id" {
 }
 
 variable "region" {
-  description = "GCP region for Cloud Run, Artifact Registry, and the data bucket."
+  description = "GCP region for Cloud Run, Artifact Registry, and every tenant's data bucket."
   type        = string
   default     = "us-central1"
 }
 
-variable "service_name" {
-  description = "Cloud Run service name. Also used to derive resource names."
-  type        = string
-  default     = "shelby"
+# ── Tenants ─────────────────────────────────────────────────────────────────
+# The list of tenant ids that get a Shelby stack. Add an entry, apply, and a
+# fully isolated deploy (Cloud Run service, GCS bucket, namespaced secrets,
+# runtime SA) appears. Drop an entry to tear one down.
+#
+# Defaults to a single tenant named "default" so a fresh apply behaves like
+# the old single-tenant setup — just under a namespaced resource name.
+variable "tenants" {
+  description = "List of tenant ids. One Shelby stack per entry."
+  type        = list(string)
+  default     = ["default"]
+
+  validation {
+    condition     = length(var.tenants) > 0
+    error_message = "At least one tenant is required."
+  }
 }
+
+# ── Shared image & model config ─────────────────────────────────────────────
+# Every tenant runs the same container image and defaults to the same model.
+# You can pin per-tenant models later by widening this into a map if a
+# customer wants Opus while another wants Haiku.
 
 variable "image" {
   description = <<-EOT
-    Container image Cloud Run will run.
-    On the first apply, leave this as the default hello image so the service
-    comes up green. Then build and push Shelby to Artifact Registry (see
-    README) and rerun with the real tag, e.g.
-    us-central1-docker.pkg.dev/<project>/shelby/shelby:latest
+    Container image every tenant's Cloud Run service runs. On the first apply
+    leave this as the default hello image so services come up green. Then
+    build and push Shelby to Artifact Registry and rerun with the real tag.
   EOT
   type        = string
   default     = "us-docker.pkg.dev/cloudrun/container/hello"
 }
 
 variable "shelby_model" {
-  description = "Anthropic model id Shelby defaults to."
+  description = "Anthropic model id Shelby defaults to (all tenants)."
   type        = string
   default     = "claude-opus-4-7"
 }
 
-variable "custom_domain" {
-  description = <<-EOT
-    Custom domain to map to Cloud Run (e.g., "shelby.is-a.dev").
-    Leave empty to skip — the Cloud Run *.run.app URL is always available.
-
-    Requires two things before you set this and apply:
-      1. DNS: a CNAME record for this domain pointing to ghs.googlehosted.com
-      2. Google Search Console: domain verified for the ADC account
-    See docs/GCP_MIGRATION.md for the walkthrough.
-  EOT
-  type        = string
-  default     = ""
-}
-
-variable "google_site_verification" {
-  description = <<-EOT
-    Value for the <meta name="google-site-verification"> tag that Shelby
-    injects into index.html. Grab it from Google Search Console when you
-    add the domain there. Not a secret — this is a public HTML meta tag.
-  EOT
-  type        = string
-  default     = ""
-}
-
-# ── Secrets ─────────────────────────────────────────────────────────────────
-# Terraform CREATES the Secret Manager slot but does NOT put the value in
-# state. You populate the value out-of-band with `gcloud secrets versions add`
-# (see README). This keeps your API keys out of terraform.tfstate.
+# ── Secrets contract ────────────────────────────────────────────────────────
+# Names Cloud Run mounts as env vars inside every tenant's container. Actual
+# Secret Manager IDs are namespaced per tenant (acme_ANTHROPIC_API_KEY etc.)
+# so a tenant can never read another tenant's key.
 
 variable "managed_secrets" {
-  description = "Names of secrets Cloud Run mounts as env vars. Values are set via gcloud, not Terraform."
+  description = "Env var names Cloud Run mounts from Secret Manager, per tenant. Actual secret IDs are namespaced with the tenant id."
   type        = set(string)
   default = [
     "ANTHROPIC_API_KEY",
@@ -78,4 +69,25 @@ variable "managed_secrets" {
     "LANGSMITH_ENDPOINT",
     "LANGSMITH_TRACING",
   ]
+}
+
+# ── Per-tenant optional overrides ───────────────────────────────────────────
+# Maps keyed by tenant_id. Only tenants named here get a custom domain / a
+# verification code; everyone else falls back to the raw Cloud Run URL and
+# no meta tag.
+
+variable "custom_domains" {
+  description = <<-EOT
+    Custom domain per tenant, e.g. { acme = "acme.shelby.is-a.dev" }. A tenant
+    with no entry doesn't get a domain mapping. Each domain still needs its
+    CNAME record and Search Console verification before it works.
+  EOT
+  type        = map(string)
+  default     = {}
+}
+
+variable "google_site_verifications" {
+  description = "Google Search Console verification codes per tenant, keyed by tenant id."
+  type        = map(string)
+  default     = {}
 }
