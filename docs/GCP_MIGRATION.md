@@ -42,11 +42,18 @@ Project `shelby-505403` in `us-central1`, billing linked. `gcloud config`
 and ADC pointed at it.
 
 **IAM grant on `kushaankaushik007@gmail.com`** — 2026-08-13
-Two project-level roles:
+Two project-level roles added on top of the existing `roles/owner`:
 - `roles/serviceusage.serviceUsageConsumer` — fixes the ADC quota-project
   warning so gcloud can enable APIs on our behalf.
 - `roles/storage.objectAdmin` — read/write on every bucket in the project,
   needed for manual inspection / uploads during Phase 1 iteration.
+
+Both are technically redundant against Owner but were granted explicitly
+before I realized Owner already covers them. Harmless; can be removed
+whenever. The Compute Engine default service account also picked up
+Editor + Storage Object Admin + Service Usage Consumer — that's GCP
+default behavior. On a real customer deploy the CE default SA gets
+disabled entirely and everything runs through named service accounts.
 
 Follow-up in Phase 2: scope Storage Object Admin down to per-tenant
 buckets so a tenant's principal cannot touch another tenant's data.
