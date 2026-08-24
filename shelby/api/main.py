@@ -107,17 +107,38 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/", include_in_schema=False)
 async def index():
-    # If GOOGLE_SITE_VERIFICATION is set, inject the meta tag Google Search
-    # Console needs to verify domain ownership. Kept out of the static file
-    # so the value is env-configurable per deploy (Cloud Run, Railway, local).
-    verification = os.getenv("GOOGLE_SITE_VERIFICATION")
-    if verification:
+    # Meta-tag verification: GOOGLE_SITE_VERIFICATION holds the code Google
+    # generates for the meta tag method. HTML-file verification uses a
+    # separate route below.
+    verification = os.getenv("GOOGLE_SITE_VERIFICATION", "")
+    if verification and not verification.endswith(".html"):
         from fastapi.responses import HTMLResponse
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         tag = f'<meta name="google-site-verification" content="{verification}">'
         html = html.replace("</head>", f"  {tag}\n</head>", 1)
         return HTMLResponse(html)
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/google{code}.html", include_in_schema=False)
+async def google_site_verification_file(code: str):
+    """Serve the Google Search Console HTML-file verification.
+
+    Search Console asks you to upload a file it names (e.g.
+    google23b564cf2b84afcd.html) with content:
+        google-site-verification: <same filename>
+
+    Set GOOGLE_SITE_VERIFICATION to the full filename and this route serves it
+    for that exact path. Any other /google*.html path returns 404 so we
+    don't act as an open verification server for unrelated hostnames.
+    """
+    from fastapi.responses import PlainTextResponse
+
+    verification = os.getenv("GOOGLE_SITE_VERIFICATION", "")
+    filename = f"google{code}.html"
+    if verification and filename == verification:
+        return PlainTextResponse(f"google-site-verification: {verification}")
+    raise HTTPException(404)
 
 
 # ── Health ───────────────────────────────────────────────────────────────────
