@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from pathlib import Path
@@ -10,11 +11,81 @@ from typing import Any
 import chromadb
 from chromadb.config import Settings
 
+log = logging.getLogger(__name__)
+
+
+def _pick_embedder():
+    """Choose the best embedding backend based on env keys, in this order:
+
+      1. Voyage voyage-3 if VOYAGE_API_KEY is set. Anthropic's recommended
+         embedding pairing for Claude, ~$0.06 per 1M tokens, 1024-dim.
+      2. OpenAI text-embedding-3-small if OPENAI_API_KEY is set. Industry
+         baseline, ~$0.02 per 1M tokens, 1536-dim.
+      3. Chroma's default (all-MiniLM-L6-v2, local sentence-transformers,
+         384-dim). Free, no API call, mediocre quality on domain text.
+
+    Returns None to let Chroma use its default; otherwise an EmbeddingFunction.
+    Any failure to construct the API-backed embedder falls through to the
+    next option so a bad key doesn't take retrieval offline.
+    """
+    from chromadb.utils import embedding_functions
+
+    voyage_key = os.getenv("VOYAGE_API_KEY")
+    if voyage_key:
+        try:
+            ef = embedding_functions.VoyageAIEmbeddingFunction(
+                api_key=voyage_key,
+                model_name=os.getenv("VOYAGE_MODEL", "voyage-3"),
+            )
+            log.info("RAG embedder: Voyage %s", os.getenv("VOYAGE_MODEL", "voyage-3"))
+            return ef
+        except Exception as exc:
+            log.warning("Voyage embedder unavailable (%s); trying next", exc)
+
+    openai_key = os.getenv("OPENAI_API_KEY")
+    if openai_key:
+        try:
+            ef = embedding_functions.OpenAIEmbeddingFunction(
+                api_key=openai_key,
+                model_name=os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+            )
+            log.info("RAG embedder: OpenAI %s",
+                     os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"))
+            return ef
+        except Exception as exc:
+            log.warning("OpenAI embedder unavailable (%s); falling back to default", exc)
+
+    log.info("RAG embedder: Chroma default (all-MiniLM-L6-v2, local)")
+    return None
+
+
+def _collection_for_embedder(embedder) -> str:
+    """Derive a collection name that encodes the embedder identity.
+
+    Chroma stores embeddings as fixed-dim vectors and rejects mixed dimensions
+    in one collection, so switching embedders on an existing collection would
+    error on the next insert. Namespacing by embedder sidesteps this: a switch
+    from default (384-dim) to Voyage (1024-dim) opens a fresh collection.
+    Old data stays on disk but is invisible until you re-ingest or switch
+    the key back — an honest migration story rather than a silent break.
+    """
+    override = os.getenv("SHELBY_RAG_COLLECTION")
+    if override:
+        return override
+    if embedder is None:
+        return "shelby"  # existing default; backwards-compatible with prior data
+    cls = type(embedder).__name__.lower()
+    if "voyage" in cls:
+        return "shelby-voyage"
+    if "openai" in cls:
+        return "shelby-openai"
+    return "shelby-custom"
+
 
 class RagStore:
     """Thin wrapper around ChromaDB for document storage and semantic retrieval."""
 
-    def __init__(self, persist_dir: str | None = None, collection: str = "shelby") -> None:
+    def __init__(self, persist_dir: str | None = None, collection: str | None = None) -> None:
         from ..paths import chroma_dir
         persist_dir = persist_dir or str(chroma_dir())
         Path(persist_dir).mkdir(parents=True, exist_ok=True)
@@ -23,10 +94,20 @@ class RagStore:
             path=persist_dir,
             settings=Settings(anonymized_telemetry=False),
         )
-        self._col = self._client.get_or_create_collection(
-            name=collection,
-            metadata={"hnsw:space": "cosine"},
-        )
+
+        embedder = _pick_embedder()
+        collection_name = collection or _collection_for_embedder(embedder)
+        # Pass embedding_function only if we picked a non-default one; passing
+        # None to Chroma is equivalent, but omitting the kwarg keeps behavior
+        # identical to older Chroma versions where the parameter didn't exist.
+        kwargs: dict[str, Any] = {
+            "name": collection_name,
+            "metadata": {"hnsw:space": "cosine"},
+        }
+        if embedder is not None:
+            kwargs["embedding_function"] = embedder
+        self._col = self._client.get_or_create_collection(**kwargs)
+        log.info("RAG collection=%s count=%d", collection_name, self._col.count())
 
     # ── Write ────────────────────────────────────────────────────────────────
 

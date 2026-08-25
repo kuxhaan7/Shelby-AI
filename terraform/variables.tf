@@ -68,6 +68,8 @@ variable "managed_secrets" {
     "LANGSMITH_PROJECT",
     "LANGSMITH_ENDPOINT",
     "LANGSMITH_TRACING",
+    "VOYAGE_API_KEY",
+    "OPENAI_API_KEY",
   ]
 }
 
