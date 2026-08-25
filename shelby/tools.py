@@ -54,7 +54,11 @@ TOOL_SCHEMAS = [
         "name": "search_knowledge_base",
         "description": (
             "Search Shelby's persistent knowledge base (RAG) for previously stored context. "
-            "Always try this before web_search for topics you may have seen before."
+            "Always try this before web_search for topics you may have seen before. "
+            "Returns a JSON object with a 'chunks' array; each chunk has an id like 'c1'. "
+            "When you use a chunk in your reply, cite it inline as [c1]. If the response "
+            "includes 'low_confidence: true', tell the user you don't have enough confident "
+            "information rather than answering from weak matches."
         ),
         "input_schema": {
             "type": "object",
@@ -479,12 +483,57 @@ def web_search(args: dict) -> str:
 
 
 def search_knowledge_base(args: dict, rag_store=None) -> str:
+    """Return structured retrieval results as JSON.
+
+    The JSON shape gives every chunk a short id (c1, c2, ...) the model can
+    reference inline in its reply — that turns "I trust the model to
+    reference sources" into a contract the model has to satisfy explicitly.
+
+    A confidence gate is also served in-band: if the top score is below
+    SHELBY_RAG_MIN_CONFIDENCE (default 0.4), the response carries a
+    low_confidence flag and a warning telling the model to abstain rather
+    than fabricate around weak matches. That's the "knows when it doesn't
+    know" behavior — enforced from the tool side rather than trusting the
+    prompt alone.
+    """
     if rag_store is None:
-        return "Knowledge base not initialised."
+        return json.dumps({"error": "Knowledge base not initialised.", "chunks": []})
+
     results = rag_store.query(args["query"], n_results=args.get("n_results", 3))
     if not results:
-        return "No relevant passages found."
-    return "\n\n---\n\n".join(f"[{r['source']}]\n{r['text']}" for r in results)
+        return json.dumps({
+            "chunks": [],
+            "note": "No relevant passages found. Tell the user directly rather than guessing.",
+        })
+
+    chunks = []
+    for i, r in enumerate(results):
+        chunks.append({
+            "id": f"c{i + 1}",
+            "text": r["text"],
+            "source": r.get("source", "unknown"),
+            "score": round(float(r.get("score", 0.0)), 4),
+        })
+
+    payload: dict = {
+        "chunks": chunks,
+        "citation_reminder": (
+            "Cite any claim taken from these chunks inline as [c1] / [c2] etc. "
+            "Do not add facts that are not in these chunks."
+        ),
+    }
+
+    threshold = float(os.getenv("SHELBY_RAG_MIN_CONFIDENCE", "0.4"))
+    top_score = max((c["score"] for c in chunks), default=0.0)
+    if top_score < threshold:
+        payload["low_confidence"] = True
+        payload["warning"] = (
+            f"Top relevance score is {top_score:.2f} (below {threshold:.2f}). "
+            "These chunks may not answer the question. Tell the user you do not "
+            "have enough confident information rather than answering from weak matches."
+        )
+
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def remember(args: dict, rag_store=None) -> str:
