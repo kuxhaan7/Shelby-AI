@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import uuid
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,48 @@ import chromadb
 from chromadb.config import Settings
 
 log = logging.getLogger(__name__)
+
+
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+def _tokenize(text: str) -> list[str]:
+    """Cheap BM25 tokenizer — lowercase, strip punctuation, split alphanum runs.
+    Good enough for the exact-match failures dense retrieval trips on
+    (filenames, error codes, function names). Not intended for prose analysis."""
+    return _TOKEN_RE.findall((text or "").lower())
+
+
+def _rrf_merge(
+    dense: list[dict], bm25: list[dict], k: int = 60
+) -> list[dict]:
+    """Reciprocal Rank Fusion of two ranked candidate lists.
+
+    RRF combines rankings without normalizing scores across retrievers (their
+    scales are incompatible). For each doc, score = sum over retrievers of
+    1 / (k + rank). k=60 is the widely-used default; higher k dampens the
+    boost from being #1 in either list, giving more docs a chance to combine.
+
+    Both inputs are lists of dicts that must include "id". A doc appearing in
+    both lists is scored once with the summed rank contribution.
+    """
+    scores: dict[str, float] = {}
+    lookup: dict[str, dict] = {}
+
+    for rank, doc in enumerate(dense):
+        did = doc["id"]
+        scores[did] = scores.get(did, 0.0) + 1.0 / (k + rank + 1)
+        lookup[did] = doc
+
+    for rank, doc in enumerate(bm25):
+        did = doc["id"]
+        scores[did] = scores.get(did, 0.0) + 1.0 / (k + rank + 1)
+        # BM25 may surface a doc dense missed entirely — remember it.
+        if did not in lookup:
+            lookup[did] = doc
+
+    sorted_ids = sorted(scores.keys(), key=lambda d: -scores[d])
+    return [{**lookup[did], "rrf_score": round(scores[did], 6)} for did in sorted_ids]
 
 
 def _pick_embedder():
@@ -148,7 +191,53 @@ class RagStore:
         # Reranker constructed once at startup; None if disabled or unavailable.
         # query() feature-tests on it instead of rebuilding a client per call.
         self._reranker = _pick_reranker()
-        log.info("RAG collection=%s count=%d", collection_name, self._col.count())
+
+        # BM25 index for the lexical half of hybrid retrieval. Built lazily
+        # from the collection contents on first query, and invalidated on
+        # every write. Disable entirely with SHELBY_HYBRID=false — dense-only
+        # retrieval is still available as before.
+        self._bm25 = None
+        self._bm25_ids: list[str] = []
+        self._bm25_docs: list[str] = []
+        self._bm25_metas: list[dict] = []
+        self._hybrid_enabled = os.getenv("SHELBY_HYBRID", "true").strip().lower() not in (
+            "false", "0", "no", "off",
+        )
+        log.info(
+            "RAG collection=%s count=%d hybrid=%s",
+            collection_name, self._col.count(), self._hybrid_enabled,
+        )
+
+    # ── BM25 lifecycle ──────────────────────────────────────────────────────
+
+    def _rebuild_bm25(self) -> None:
+        """Load every doc out of Chroma and rebuild the in-memory BM25 index.
+        Skipped if hybrid is off, rank_bm25 isn't installed, or the store is
+        empty. O(N) — fine for demo/solo scale (thousands of docs); if the
+        store grows past that, invalidate more selectively than we do today."""
+        if not self._hybrid_enabled:
+            self._bm25 = None
+            return
+        try:
+            from rank_bm25 import BM25Okapi
+        except ImportError:
+            log.info("rank_bm25 not installed; hybrid disabled")
+            self._bm25 = None
+            return
+        if self._col.count() == 0:
+            self._bm25 = None
+            return
+
+        raw = self._col.get(include=["documents", "metadatas"])
+        self._bm25_ids = list(raw["ids"])
+        self._bm25_docs = [d or "" for d in raw["documents"]]
+        self._bm25_metas = [m or {} for m in raw["metadatas"]]
+        tokenized = [_tokenize(d) for d in self._bm25_docs]
+        self._bm25 = BM25Okapi(tokenized)
+
+    def _invalidate_bm25(self) -> None:
+        """Mark BM25 stale. Next query() rebuilds it. Cheap."""
+        self._bm25 = None
 
     # ── Write ────────────────────────────────────────────────────────────────
 
@@ -160,6 +249,7 @@ class RagStore:
             metadatas=[{"source": source}],
             ids=[doc_id],
         )
+        self._invalidate_bm25()
         return doc_id
 
     def add_batch(self, texts: list[str], sources: list[str] | None = None) -> list[str]:
@@ -172,54 +262,102 @@ class RagStore:
             metadatas=[{"source": s} for s in sources],
             ids=ids,
         )
+        self._invalidate_bm25()
         return ids
 
     # ── Read ─────────────────────────────────────────────────────────────────
 
     def query(self, query: str, n_results: int = 3) -> list[dict[str, Any]]:
-        """Return top-n passages, reranked when a reranker is configured.
+        """Hybrid dense + BM25 retrieval with optional rerank.
 
-        Without a reranker: single-pass cosine top-n from Chroma.
-        With a reranker: fetch K candidates (n_results * multiplier), then
-        rescore with a cross-encoder and return the sharper top-n. Multiplier
-        is tuned by SHELBY_RERANK_FETCH_MULTIPLIER (default 5), capped at the
-        collection's actual size.
+        Three layers, each optional:
 
-        If rerank fails at call time, we return the plain cosine top-n so a
-        transient API blip never takes retrieval offline.
+          1. Dense (always): Chroma cosine top-K. Fast, semantic.
+          2. BM25 (if SHELBY_HYBRID != false and rank_bm25 installed):
+             lexical top-K over the same collection. Catches exact-string
+             queries (filenames, error codes) dense embedders fumble.
+          3. Rerank (if a reranker is configured): cross-encoder rescore
+             on the merged pool. Sharper top-N than either retriever alone.
+
+        Dense and BM25 candidate lists are merged with Reciprocal Rank Fusion
+        (k=60) before rerank. If rerank fails or is disabled, we return the
+        RRF top-N so retrieval degrades gracefully rather than going offline.
         """
         total = self._col.count()
         if total == 0:
             return []
 
+        # Fetch pool size: wider when a reranker is available (it needs
+        # candidates to work with), otherwise just n_results.
         fetch_n = min(n_results, total)
         if self._reranker is not None:
             multiplier = int(os.getenv("SHELBY_RERANK_FETCH_MULTIPLIER", "5"))
             fetch_n = min(max(n_results, n_results * multiplier), total)
 
+        # ── Dense (always) ─────────────────────────────────────────────────
         raw = self._col.query(query_texts=[query], n_results=fetch_n)
-        docs = raw["documents"][0]
-        metas = raw["metadatas"][0]
-        distances = raw["distances"][0]
+        dense_ids = raw["ids"][0]
+        dense_docs = raw["documents"][0]
+        dense_metas = raw["metadatas"][0]
+        dense_distances = raw["distances"][0]
 
-        candidates = [
-            {"text": d, "source": (m or {}).get("source", ""), "score": round(1 - dist, 4)}
-            for d, m, dist in zip(docs, metas, distances)
+        dense_hits = [
+            {
+                "id": did,
+                "text": doc,
+                "source": (m or {}).get("source", ""),
+                "cosine_score": round(1 - dist, 4),
+            }
+            for did, doc, m, dist in zip(dense_ids, dense_docs, dense_metas, dense_distances)
         ]
 
-        # Nothing to rerank: fewer than n_results candidates, or reranker off.
-        if self._reranker is None or len(candidates) <= n_results:
-            return candidates[:n_results]
+        # ── BM25 (if enabled + available) ──────────────────────────────────
+        bm25_hits: list[dict] = []
+        if self._hybrid_enabled:
+            if self._bm25 is None:
+                self._rebuild_bm25()
+            if self._bm25 is not None:
+                scores = self._bm25.get_scores(_tokenize(query))
+                # Top fetch_n by score, dropping zeros (BM25 returns 0 for
+                # docs with zero overlapping terms — pure noise).
+                ranked = sorted(range(len(scores)), key=lambda i: -scores[i])[:fetch_n]
+                bm25_hits = [
+                    {
+                        "id": self._bm25_ids[i],
+                        "text": self._bm25_docs[i],
+                        "source": (self._bm25_metas[i] or {}).get("source", ""),
+                        "bm25_score": round(float(scores[i]), 4),
+                    }
+                    for i in ranked
+                    if scores[i] > 0
+                ]
+
+        # ── Merge (RRF) ────────────────────────────────────────────────────
+        merged = _rrf_merge(dense_hits, bm25_hits, k=60) if bm25_hits else dense_hits
+
+        # ── Rerank (or fall through to RRF top-N) ──────────────────────────
+        if self._reranker is None or len(merged) <= n_results:
+            return [
+                {"text": c["text"], "source": c.get("source", ""),
+                 "score": c.get("rrf_score", c.get("cosine_score", 0.0))}
+                for c in merged[:n_results]
+            ]
 
         try:
-            reranked = self._reranker(query, [c["text"] for c in candidates], n_results)
+            reranked = self._reranker(query, [c["text"] for c in merged], n_results)
             return [
-                {**candidates[idx], "score": round(score, 4)}
+                {"text": merged[idx]["text"],
+                 "source": merged[idx].get("source", ""),
+                 "score": round(score, 4)}
                 for idx, score in reranked
             ]
         except Exception as exc:
-            log.warning("Rerank failed (%s); returning raw cosine top-%d", exc, n_results)
-            return candidates[:n_results]
+            log.warning("Rerank failed (%s); returning RRF top-%d", exc, n_results)
+            return [
+                {"text": c["text"], "source": c.get("source", ""),
+                 "score": c.get("rrf_score", c.get("cosine_score", 0.0))}
+                for c in merged[:n_results]
+            ]
 
     def count(self) -> int:
         return self._col.count()
