@@ -19,6 +19,11 @@ from .usage_tracker import record as record_usage
 # Ordered fallback chain: primary first, cheapest/fastest last.
 # Override the primary via SHELBY_MODEL; the rest of the chain is fixed.
 _PRIMARY = os.getenv("SHELBY_MODEL", "claude-sonnet-5")
+
+# Hard cap on pre-send input tokens per request. Anthropic's 200k window is
+# the ceiling on modern models; 150k leaves headroom for cached-write
+# amplification and the model's own output budget. Override via env.
+_INPUT_TOKEN_CAP = int(os.getenv("SHELBY_INPUT_TOKEN_CAP", "150000"))
 MODEL_CHAIN: list[str] = [
     _PRIMARY,
     "claude-sonnet-4-6",
@@ -192,6 +197,96 @@ def _cached_tools() -> list[dict]:
     tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
     return tools
 
+
+# ── Input-token cap enforcement ──────────────────────────────────────────────
+# Without this, a long conversation eventually gets bounced by Anthropic with
+# a 400 (invalid_request_error, "input length exceeds context limit"). We count
+# the pre-send tokens with the SDK's count_tokens helper and drop the oldest
+# messages until we're back under the cap.
+#
+# Trimming rules that keep the payload valid:
+#   - Always keep the last (current) message. If even that alone is over cap,
+#     that's a user-input problem, not ours — the API will return the error.
+#   - When we drop an assistant message that contained a tool_use, the next
+#     message will be its tool_result. Drop that too, or the API rejects the
+#     orphan tool_result.
+
+def _is_orphan_tool_result(msg: dict) -> bool:
+    """True if the message is a user turn carrying tool_result blocks.
+    Used to skip past orphans left behind after a paired tool_use was trimmed."""
+    if msg.get("role") != "user":
+        return False
+    content = msg.get("content")
+    if not isinstance(content, list):
+        return False
+    return any(
+        isinstance(b, dict) and b.get("type") == "tool_result"
+        for b in content
+    )
+
+
+def _rough_char_count(messages: list[dict]) -> int:
+    """Cheap local estimate. Used to short-circuit the count_tokens API call
+    when the payload is obviously nowhere near the cap."""
+    return sum(len(str(m.get("content", ""))) for m in messages)
+
+
+def _count_input_tokens(
+    client, model: str, system, tools, messages: list[dict]
+) -> int:
+    """Anthropic pre-send token count. On failure, return a value guaranteed
+    to trigger a trim rather than silently sending a payload we couldn't size."""
+    try:
+        kwargs: dict[str, Any] = {"model": model, "messages": messages}
+        if system is not None:
+            kwargs["system"] = system
+        if tools is not None:
+            kwargs["tools"] = tools
+        return client.messages.count_tokens(**kwargs).input_tokens
+    except Exception as exc:
+        log.warning("count_tokens failed (%s); treating payload as over cap", exc)
+        return _INPUT_TOKEN_CAP + 1
+
+
+def _trim_to_cap(
+    client, model: str, system, tools, messages: list[dict]
+) -> list[dict]:
+    """Drop oldest messages until the pre-send count fits under the cap.
+    Short-circuits without an API call for payloads that are trivially small
+    (rough char count nowhere near cap * 4)."""
+    if not messages:
+        return messages
+
+    # Cheap gate: 4 chars/token is a rough estimate, so multiplying the cap by
+    # a conservative 3 catches anything within a reasonable factor.
+    if _rough_char_count(messages) < _INPUT_TOKEN_CAP * 3:
+        return messages
+
+    initial_count = _count_input_tokens(client, model, system, tools, messages)
+    if initial_count <= _INPUT_TOKEN_CAP:
+        return messages
+
+    trimmed = list(messages)
+    dropped = 0
+    while len(trimmed) > 1:
+        trimmed.pop(0)
+        dropped += 1
+        # Follow through any orphan tool_result blocks that got exposed at
+        # the new head of the list.
+        while len(trimmed) > 1 and _is_orphan_tool_result(trimmed[0]):
+            trimmed.pop(0)
+            dropped += 1
+        if _count_input_tokens(client, model, system, tools, trimmed) <= _INPUT_TOKEN_CAP:
+            break
+
+    log.warning(
+        "Trimmed %d oldest message(s) to fit under %d-token input cap "
+        "(was %d, now %d).",
+        dropped, _INPUT_TOKEN_CAP, initial_count,
+        _count_input_tokens(client, model, system, tools, trimmed),
+    )
+    return trimmed
+
 log = logging.getLogger(__name__)
 
 
@@ -300,6 +395,11 @@ class ShelbyAgent:
         tools = _cached_tools()
 
         for _ in range(max_iterations):
+            # Enforce the input-token cap. tool-use loops can grow msgs several
+            # times per user turn (each tool_result appended), so trim inside
+            # the loop, not just at the top.
+            msgs = _trim_to_cap(self._client, model, system, tools, msgs)
+
             kwargs: dict[str, Any] = dict(
                 model=model,
                 max_tokens=2048,
@@ -364,16 +464,20 @@ class ShelbyAgent:
     def stream(self, messages: list[dict]) -> Generator[str, None, None]:
         """Stream the final response (no tool calls in streaming path for simplicity)."""
         last_exc: Exception | None = None
+        stream_system = [{
+            "type": "text",
+            "text": SYSTEM_PROMPT,
+            "cache_control": {"type": "ephemeral"},
+        }]
         for model in MODEL_CHAIN:
             try:
+                # Enforce the input-token cap before each attempt so we don't
+                # bounce off a 400 that a trim would have prevented.
+                messages = _trim_to_cap(self._client, model, stream_system, None, messages)
                 with self._client.messages.stream(
                     model=model,
                     max_tokens=2048,
-                    system=[{
-                        "type": "text",
-                        "text": SYSTEM_PROMPT,
-                        "cache_control": {"type": "ephemeral"},
-                    }],
+                    system=stream_system,
                     messages=messages,
                 ) as stream:
                     for text in stream.text_stream:
