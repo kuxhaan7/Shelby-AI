@@ -140,12 +140,57 @@ to do it manually. Confirm before anything destructive or externally visible
 
 
 def _system_prompt() -> str:
-    """System prompt, always advertising connect_mcp and create_webhook, plus a live server list."""
+    """Flat-string system prompt. Kept for callers that want the raw text
+    (logging, non-cached paths). The cached-blocks form is _system_blocks()."""
     prompt = SYSTEM_PROMPT + _MCP_CONNECT_PROMPT + _WEBHOOK_PROMPT
     servers = describe_servers()
     if servers:
         prompt += _MCP_ACTIVE_PROMPT.format(servers=servers)
     return prompt
+
+
+def _system_blocks() -> list[dict]:
+    """System prompt as Anthropic prompt-caching blocks.
+
+    The static part (SYSTEM_PROMPT + MCP-connect + webhook guides) is marked
+    cache_control:ephemeral so it's reused across every turn of the same
+    conversation — ~90% off the input cost for that ~2.5k-token segment on
+    every follow-up, and cheap to write once at the start.
+
+    The live MCP server list is a separate block WITHOUT cache_control so a
+    new server connecting mid-conversation doesn't invalidate the static
+    cache. It runs uncached, but it's small.
+    """
+    static = SYSTEM_PROMPT + _MCP_CONNECT_PROMPT + _WEBHOOK_PROMPT
+    blocks: list[dict] = [
+        {
+            "type": "text",
+            "text": static,
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
+    servers = describe_servers()
+    if servers:
+        blocks.append({
+            "type": "text",
+            "text": _MCP_ACTIVE_PROMPT.format(servers=servers),
+        })
+    return blocks
+
+
+def _cached_tools() -> list[dict]:
+    """Tool schemas with a cache breakpoint on the last one.
+
+    A cache_control marker on the last tool caches the entire tools payload
+    (and everything before it) so the ~3.4k-token schema list gets reused
+    across turns too. The list is shallow-copied so the shared TOOL_SCHEMAS
+    module state isn't mutated.
+    """
+    if not TOOL_SCHEMAS:
+        return TOOL_SCHEMAS
+    tools = list(TOOL_SCHEMAS)
+    tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
+    return tools
 
 log = logging.getLogger(__name__)
 
@@ -251,14 +296,15 @@ class ShelbyAgent:
         msgs = list(messages)
         usage = TokenUsage(model=model)
         servers = mcp_servers()
-        system = _system_prompt()
+        system = _system_blocks()
+        tools = _cached_tools()
 
         for _ in range(max_iterations):
             kwargs: dict[str, Any] = dict(
                 model=model,
                 max_tokens=2048,
                 system=system,
-                tools=TOOL_SCHEMAS,
+                tools=tools,
                 messages=msgs,
             )
             if servers:
@@ -323,7 +369,11 @@ class ShelbyAgent:
                 with self._client.messages.stream(
                     model=model,
                     max_tokens=2048,
-                    system=SYSTEM_PROMPT,
+                    system=[{
+                        "type": "text",
+                        "text": SYSTEM_PROMPT,
+                        "cache_control": {"type": "ephemeral"},
+                    }],
                     messages=messages,
                 ) as stream:
                     for text in stream.text_stream:
