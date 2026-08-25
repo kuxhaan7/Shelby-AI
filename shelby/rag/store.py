@@ -59,6 +59,44 @@ def _pick_embedder():
     return None
 
 
+def _pick_reranker():
+    """Return a callable (query, docs, top_n) -> [(index, score), ...] or None.
+
+    Cross-encoder rerank pass on top of the bi-encoder retrieval. The
+    embedder retrieves K candidates by cosine similarity (fast, coarse); the
+    reranker rescores each (query, candidate) pair jointly (slower, sharper)
+    and picks the real top-N.
+
+    Voyage's rerank-2 is the current default because we're already wired to
+    Voyage for embeddings — one key, one dashboard. Disable entirely with
+    SHELBY_RERANK=false.
+    """
+    if os.getenv("SHELBY_RERANK", "true").strip().lower() in ("false", "0", "no", "off"):
+        log.info("RAG reranker: disabled via SHELBY_RERANK")
+        return None
+
+    voyage_key = os.getenv("VOYAGE_API_KEY")
+    if voyage_key:
+        try:
+            import voyageai
+            client = voyageai.Client(api_key=voyage_key)
+            model = os.getenv("VOYAGE_RERANK_MODEL", "rerank-2")
+
+            def rerank(query: str, docs: list[str], top_n: int):
+                result = client.rerank(
+                    query=query, documents=docs, model=model, top_k=top_n
+                )
+                return [(int(r.index), float(r.relevance_score)) for r in result.results]
+
+            log.info("RAG reranker: Voyage %s", model)
+            return rerank
+        except Exception as exc:
+            log.warning("Voyage reranker unavailable (%s); rerank disabled", exc)
+
+    log.info("RAG reranker: none")
+    return None
+
+
 def _collection_for_embedder(embedder) -> str:
     """Derive a collection name that encodes the embedder identity.
 
@@ -107,6 +145,9 @@ class RagStore:
         if embedder is not None:
             kwargs["embedding_function"] = embedder
         self._col = self._client.get_or_create_collection(**kwargs)
+        # Reranker constructed once at startup; None if disabled or unavailable.
+        # query() feature-tests on it instead of rebuilding a client per call.
+        self._reranker = _pick_reranker()
         log.info("RAG collection=%s count=%d", collection_name, self._col.count())
 
     # ── Write ────────────────────────────────────────────────────────────────
@@ -136,18 +177,49 @@ class RagStore:
     # ── Read ─────────────────────────────────────────────────────────────────
 
     def query(self, query: str, n_results: int = 3) -> list[dict[str, Any]]:
-        """Return top-n passages ranked by cosine similarity."""
-        n_results = min(n_results, self._col.count() or 1)
-        if self._col.count() == 0:
+        """Return top-n passages, reranked when a reranker is configured.
+
+        Without a reranker: single-pass cosine top-n from Chroma.
+        With a reranker: fetch K candidates (n_results * multiplier), then
+        rescore with a cross-encoder and return the sharper top-n. Multiplier
+        is tuned by SHELBY_RERANK_FETCH_MULTIPLIER (default 5), capped at the
+        collection's actual size.
+
+        If rerank fails at call time, we return the plain cosine top-n so a
+        transient API blip never takes retrieval offline.
+        """
+        total = self._col.count()
+        if total == 0:
             return []
-        raw = self._col.query(query_texts=[query], n_results=n_results)
+
+        fetch_n = min(n_results, total)
+        if self._reranker is not None:
+            multiplier = int(os.getenv("SHELBY_RERANK_FETCH_MULTIPLIER", "5"))
+            fetch_n = min(max(n_results, n_results * multiplier), total)
+
+        raw = self._col.query(query_texts=[query], n_results=fetch_n)
         docs = raw["documents"][0]
         metas = raw["metadatas"][0]
         distances = raw["distances"][0]
-        return [
-            {"text": d, "source": m.get("source", ""), "score": round(1 - dist, 4)}
+
+        candidates = [
+            {"text": d, "source": (m or {}).get("source", ""), "score": round(1 - dist, 4)}
             for d, m, dist in zip(docs, metas, distances)
         ]
+
+        # Nothing to rerank: fewer than n_results candidates, or reranker off.
+        if self._reranker is None or len(candidates) <= n_results:
+            return candidates[:n_results]
+
+        try:
+            reranked = self._reranker(query, [c["text"] for c in candidates], n_results)
+            return [
+                {**candidates[idx], "score": round(score, 4)}
+                for idx, score in reranked
+            ]
+        except Exception as exc:
+            log.warning("Rerank failed (%s); returning raw cosine top-%d", exc, n_results)
+            return candidates[:n_results]
 
     def count(self) -> int:
         return self._col.count()
