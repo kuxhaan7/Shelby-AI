@@ -24,6 +24,15 @@ _PRIMARY = os.getenv("SHELBY_MODEL", "claude-sonnet-5")
 # the ceiling on modern models; 150k leaves headroom for cached-write
 # amplification and the model's own output budget. Override via env.
 _INPUT_TOKEN_CAP = int(os.getenv("SHELBY_INPUT_TOKEN_CAP", "150000"))
+
+# Rolling summarization keeps the last N messages verbatim and folds
+# everything older into a Claude-generated summary. When the summarized
+# payload still doesn't fit, we fall through to the hard trim.
+_KEEP_RECENT = int(os.getenv("SHELBY_SUMMARIZE_KEEP_RECENT", "6"))
+_SUMMARIZE_MODEL = os.getenv("SHELBY_SUMMARIZE_MODEL", "claude-haiku-4-5-20251001")
+_SUMMARIZE_ENABLED = os.getenv("SHELBY_SUMMARIZE", "true").strip().lower() not in (
+    "false", "0", "no", "off",
+)
 MODEL_CHAIN: list[str] = [
     _PRIMARY,
     "claude-sonnet-4-6",
@@ -288,6 +297,163 @@ def _trim_to_cap(
     )
     return trimmed
 
+
+# ── Rolling summarization ────────────────────────────────────────────────────
+# _trim_to_cap keeps the payload valid but drops information. Rolling
+# summarization compresses the same span into a Claude-written gist so we
+# preserve *what happened* even after the underlying turns are gone.
+
+_SUMMARY_PROMPT = (
+    "You are compressing an earlier segment of a conversation so it fits in "
+    "a smaller context. Write a concise 2–3 paragraph summary in third "
+    "person that preserves: (1) what the user was trying to do, (2) key "
+    "facts and decisions that came up, (3) any commitments the assistant "
+    "made or artifacts it produced, (4) unresolved threads worth continuing. "
+    "Drop pleasantries, tool-call scaffolding, and step-by-step process. "
+    "Do not invent facts; if something is unclear from the transcript, omit "
+    "it rather than guess."
+)
+
+
+def _flatten_transcript(messages: list[dict]) -> str:
+    """Serialize a message list into a plain-text transcript for the summarizer.
+    Tool_use and tool_result blocks are collapsed to short tags so the summary
+    prompt stays readable and the summarizer doesn't waste tokens on JSON."""
+    lines: list[str] = []
+    for m in messages:
+        role = str(m.get("role", "unknown")).upper()
+        content = m.get("content", "")
+        if isinstance(content, str):
+            body = content
+        elif isinstance(content, list):
+            parts: list[str] = []
+            for b in content:
+                if not isinstance(b, dict):
+                    continue
+                t = b.get("type")
+                if t == "text":
+                    parts.append(str(b.get("text", "")))
+                elif t == "tool_use":
+                    parts.append(f"[called tool: {b.get('name', '?')}]")
+                elif t == "tool_result":
+                    rc = str(b.get("content", ""))
+                    if len(rc) > 200:
+                        rc = rc[:200] + "…"
+                    parts.append(f"[tool result: {rc}]")
+                elif t == "image":
+                    parts.append("[image]")
+            body = "\n".join(p for p in parts if p)
+        else:
+            body = str(content)
+        lines.append(f"{role}: {body}")
+    return "\n\n".join(lines)
+
+
+def _summarize_history(client, messages: list[dict]) -> str:
+    """One Anthropic call that turns a message list into a paragraph summary.
+    Uses the cheapest model in the chain by default so summarization tax is
+    small even on long conversations. Raises on failure so the caller can
+    fall back to plain trimming."""
+    transcript = _flatten_transcript(messages)
+    response = client.messages.create(
+        model=_SUMMARIZE_MODEL,
+        max_tokens=1024,
+        messages=[
+            {"role": "user", "content": _SUMMARY_PROMPT + "\n\n---\n\n" + transcript},
+        ],
+    )
+    # First text block; be defensive so a differently-shaped response
+    # doesn't NoneType-crash the whole reply.
+    for block in getattr(response, "content", []) or []:
+        if getattr(block, "type", None) == "text":
+            text = getattr(block, "text", "") or ""
+            if text.strip():
+                return text.strip()
+    raise RuntimeError("summarizer returned no text blocks")
+
+
+def _find_safe_split(messages: list[dict], keep_recent: int) -> int:
+    """Return index where recent starts. Walks backward past any tool_result
+    at the boundary so we never split a tool_use / tool_result pair — that
+    would leave the "recent" half starting with an orphan the API rejects."""
+    if len(messages) <= keep_recent:
+        return 0
+    idx = len(messages) - keep_recent
+    while 0 < idx < len(messages) and _is_orphan_tool_result(messages[idx]):
+        idx -= 1
+    return idx
+
+
+def _rolling_summarize(
+    client, model: str, system, tools, messages: list[dict]
+) -> list[dict]:
+    """If we'd blow the cap, replace the oldest span with a Claude-written
+    summary rather than silently dropping it. Falls back to plain trim on
+    any failure (bad summarize response, model unavailable, etc.) so a bad
+    minute never takes the chat path offline.
+
+    Steps:
+      1. Cheap gate: if the payload isn't plausibly near the cap, no-op.
+      2. If SHELBY_SUMMARIZE=false, fall straight through to _trim_to_cap.
+      3. Split at the last _KEEP_RECENT boundary (past any orphan).
+      4. Summarize the older half in one Anthropic call.
+      5. Prepend a synthetic (user summary, assistant ack) pair so
+         alternation stays valid and Claude sees the compressed context.
+      6. If the summarized payload is still over cap, run _trim_to_cap on
+         it as a safety net — never send an over-cap request.
+    """
+    if not messages:
+        return messages
+
+    if _rough_char_count(messages) < _INPUT_TOKEN_CAP * 3:
+        return messages
+
+    if _count_input_tokens(client, model, system, tools, messages) <= _INPUT_TOKEN_CAP:
+        return messages
+
+    if not _SUMMARIZE_ENABLED:
+        return _trim_to_cap(client, model, system, tools, messages)
+
+    split = _find_safe_split(messages, _KEEP_RECENT)
+    if split <= 0:
+        # Recent tail already IS the whole conversation. Can't summarize.
+        return _trim_to_cap(client, model, system, tools, messages)
+
+    old, recent = messages[:split], messages[split:]
+
+    try:
+        summary_text = _summarize_history(client, old)
+    except Exception as exc:
+        log.warning(
+            "Rolling summarize failed (%s); falling back to hard trim.", exc,
+        )
+        return _trim_to_cap(client, model, system, tools, messages)
+
+    summary_pair = [
+        {
+            "role": "user",
+            "content": f"[Summary of {len(old)} earlier turns]\n\n{summary_text}",
+        },
+        {
+            "role": "assistant",
+            "content": "Understood — continuing from that summary.",
+        },
+    ]
+
+    condensed = summary_pair + recent
+    log.info(
+        "Rolling summary: %d old messages -> 1 summary pair, %d recent kept.",
+        len(old), len(recent),
+    )
+
+    # Safety net — if the summary itself pushes us back over cap (very rare
+    # but possible with a chatty summarizer), fall back to the hard trim.
+    if _count_input_tokens(client, model, system, tools, condensed) > _INPUT_TOKEN_CAP:
+        log.warning("Post-summary payload still over cap; hard-trimming.")
+        return _trim_to_cap(client, model, system, tools, condensed)
+
+    return condensed
+
 log = logging.getLogger(__name__)
 
 
@@ -397,9 +563,10 @@ class ShelbyAgent:
 
         for _ in range(max_iterations):
             # Enforce the input-token cap. tool-use loops can grow msgs several
-            # times per user turn (each tool_result appended), so trim inside
-            # the loop, not just at the top.
-            msgs = _trim_to_cap(self._client, model, system, tools, msgs)
+            # times per user turn (each tool_result appended), so check every
+            # iteration. Rolling summary preserves what happened; trim is the
+            # fallback safety net if summarization can't recover the payload.
+            msgs = _rolling_summarize(self._client, model, system, tools, msgs)
 
             kwargs: dict[str, Any] = dict(
                 model=model,
@@ -473,8 +640,10 @@ class ShelbyAgent:
         for model in MODEL_CHAIN:
             try:
                 # Enforce the input-token cap before each attempt so we don't
-                # bounce off a 400 that a trim would have prevented.
-                messages = _trim_to_cap(self._client, model, stream_system, None, messages)
+                # bounce off a 400 that a trim would have prevented. Uses
+                # rolling summary so long conversations preserve their gist
+                # instead of dropping context on the floor.
+                messages = _rolling_summarize(self._client, model, stream_system, None, messages)
                 with self._client.messages.stream(
                     model=model,
                     max_tokens=2048,
