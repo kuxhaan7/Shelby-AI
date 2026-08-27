@@ -113,14 +113,14 @@ def _llm_critique(question: str, answer: str, feedback: str) -> dict | None:
     if not api_key:
         return None
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
+        from .llm_gateway import LLMGateway
+        gateway = LLMGateway()
         user = (
             f"QUESTION:\n{question}\n\n"
             f"SHELBY'S ANSWER:\n{answer}\n\n"
             f"USER FEEDBACK (may be empty):\n{feedback or '(none)'}"
         )
-        resp = client.messages.create(
+        resp = gateway.create(
             model=_CRITIC_MODEL,
             max_tokens=1500,
             system=_CRITIC_SYSTEM,
