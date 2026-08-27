@@ -153,6 +153,17 @@ async def health():
     return {"status": "ok", "rag_docs": docs, "mcp_servers": mcp, "webhooks": webhooks}
 
 
+@app.get("/llm/stats")
+async def llm_stats():
+    """Gateway observability: cost breakdown, cache stats, routing info."""
+    from ..llm_gateway import get_cost_summary
+    stats: dict = {"cost": get_cost_summary()}
+    if agent and hasattr(agent, "_gateway"):
+        stats["cache"] = agent._gateway.cache_stats()
+        stats["cross_provider_models"] = agent._gateway.cross_provider_models
+    return stats
+
+
 # ── MCP connectors (add any external service by URL, like Claude) ─────────────
 
 @app.get("/mcp")
