@@ -9,6 +9,7 @@ from typing import Any
 
 import anthropic
 
+from .llm_gateway import LLMGateway
 from .mcp import MCP_BETA, describe_servers, mcp_servers
 from .memory.notes import NotesStore
 from .rag.store import RagStore
@@ -41,6 +42,14 @@ MODEL_CHAIN: list[str] = [
 # De-duplicate while preserving order (in case SHELBY_MODEL is already a fallback)
 seen: set[str] = set()
 MODEL_CHAIN = [m for m in MODEL_CHAIN if not (m in seen or seen.add(m))]  # type: ignore[func-returns-value]
+
+# Cross-provider fallback models appended when SHELBY_LLM_GATEWAY is enabled.
+_CROSS_PROVIDER = [
+    m.strip()
+    for m in os.getenv("SHELBY_LLM_FALLBACK_MODELS", "").split(",")
+    if m.strip()
+]
+MODEL_CHAIN.extend(m for m in _CROSS_PROVIDER if m not in seen)
 
 # Only fall back on transient / capacity errors, not on bad-request / auth errors.
 _FALLBACK_STATUS_CODES = {429, 500, 502, 503, 529}
@@ -516,7 +525,7 @@ class ShelbyAgent:
         skill_registry: SkillRegistry | None = None,
         task_scheduler=None,
     ) -> None:
-        self._client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        self._gateway = LLMGateway()
         self._rag = rag_store
         self._notes = notes_store or NotesStore()
         self._skills = skill_registry or SkillRegistry()
@@ -566,7 +575,7 @@ class ShelbyAgent:
             # times per user turn (each tool_result appended), so check every
             # iteration. Rolling summary preserves what happened; trim is the
             # fallback safety net if summarization can't recover the payload.
-            msgs = _rolling_summarize(self._client, model, system, tools, msgs)
+            msgs = _rolling_summarize(self._gateway.anthropic_client, model, system, tools, msgs)
 
             kwargs: dict[str, Any] = dict(
                 model=model,
@@ -576,13 +585,11 @@ class ShelbyAgent:
                 messages=msgs,
             )
             if servers:
-                # Remote MCP servers are executed server-side by Claude; this
-                # requires the beta connector flag and goes through beta.messages.
                 kwargs["mcp_servers"] = servers
                 kwargs["betas"] = [MCP_BETA]
-                response = self._client.beta.messages.create(**kwargs)
+                response = self._gateway.beta_create(**kwargs)
             else:
-                response = self._client.messages.create(**kwargs)
+                response = self._gateway.create(**kwargs)
             usage.add(response.usage)
 
             if response.stop_reason == "end_turn":
@@ -643,8 +650,8 @@ class ShelbyAgent:
                 # bounce off a 400 that a trim would have prevented. Uses
                 # rolling summary so long conversations preserve their gist
                 # instead of dropping context on the floor.
-                messages = _rolling_summarize(self._client, model, stream_system, None, messages)
-                with self._client.messages.stream(
+                messages = _rolling_summarize(self._gateway.anthropic_client, model, stream_system, None, messages)
+                with self._gateway.stream(
                     model=model,
                     max_tokens=2048,
                     system=stream_system,

@@ -70,6 +70,7 @@ variable "managed_secrets" {
     "LANGSMITH_TRACING",
     "VOYAGE_API_KEY",
     "OPENAI_API_KEY",
+    "XAI_API_KEY",
   ]
 }
 
