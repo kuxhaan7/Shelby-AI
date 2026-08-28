@@ -164,6 +164,13 @@ async def llm_stats():
     return stats
 
 
+@app.get("/guardrails")
+async def guardrails_config():
+    """Current guardrail configuration and status."""
+    from .. import guardrails
+    return guardrails.get_config()
+
+
 # ── MCP connectors (add any external service by URL, like Claude) ─────────────
 
 @app.get("/mcp")
@@ -514,6 +521,9 @@ def _agent_error_detail(exc: Exception) -> tuple[int, str]:
         return 502, f"Claude API error ({exc.status_code}): {getattr(exc, 'message', str(exc))}"
     if isinstance(exc, anthropic.APIConnectionError):
         return 502, "Could not reach the Claude API from the server."
+    from ..guardrails import GuardrailBlocked
+    if isinstance(exc, GuardrailBlocked):
+        return 400, f"Request blocked by guardrails: {exc}"
     return 500, f"Unexpected error: {exc}"
 
 

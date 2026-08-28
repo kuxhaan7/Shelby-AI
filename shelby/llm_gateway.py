@@ -4,12 +4,16 @@ Routes Claude models through the Anthropic SDK (zero translation overhead,
 full feature support including MCP, prompt caching, and streaming) and
 non-Anthropic models through LiteLLM with smart routing and caching.
 
+All calls pass through the guardrails engine (when enabled) for input
+validation and output filtering before reaching any provider.
+
 Configuration:
     SHELBY_LLM_GATEWAY=true             # enable multi-provider routing
     SHELBY_LLM_FALLBACK_MODELS=xai/grok-3,openai/gpt-4o
     SHELBY_LLM_CACHE=true               # enable response caching
     SHELBY_LLM_CACHE_TTL=3600           # cache TTL in seconds (default 1h)
     SHELBY_LLM_ROUTING=simple           # simple | cost | latency
+    SHELBY_GUARDRAILS=true              # enable input/output guardrails
 """
 
 from __future__ import annotations
@@ -22,6 +26,8 @@ from dataclasses import dataclass, field
 from typing import Any, Generator
 
 import anthropic
+
+from . import guardrails
 
 log = logging.getLogger(__name__)
 
@@ -408,11 +414,20 @@ class LLMGateway:
         return list(_CROSS_PROVIDER_MODELS) if self._enabled else []
 
     def create(self, **kwargs: Any) -> Any:
-        """Completion call — routes by model, checks cache first."""
+        """Completion call — routes by model, checks cache first.
+
+        When guardrails are enabled, input is checked before the call and
+        output is checked after.  In 'block' mode a GuardrailBlocked
+        exception propagates to the caller.
+        """
         model = kwargs.get("model", "")
         messages = kwargs.get("messages", [])
         system = kwargs.get("system")
         tools = kwargs.get("tools")
+
+        # ── input guardrails ──
+        input_result = guardrails.check_input(messages, system)
+        guardrails.enforce(input_result)
 
         if self._cache and not tools:
             cached = self._cache.get(model, messages, system)
@@ -424,17 +439,29 @@ class LLMGateway:
             _log_cost(model, resp.usage)
             if self._cache and not tools:
                 self._cache.put(model, messages, resp, system)
-            return resp
+        else:
+            resp = self._litellm_create(**kwargs)
+            if self._cache and not tools:
+                self._cache.put(model, messages, resp, system)
 
-        resp = self._litellm_create(**kwargs)
-        if self._cache and not tools:
-            self._cache.put(model, messages, resp, system)
+        # ── output guardrails ──
+        output_result = guardrails.check_output(resp)
+        guardrails.enforce(output_result)
+
         return resp
 
     def beta_create(self, **kwargs: Any) -> Any:
-        """MCP beta calls — always Anthropic SDK."""
+        """MCP beta calls — always Anthropic SDK, with guardrails."""
+        input_result = guardrails.check_input(
+            kwargs.get("messages", []), kwargs.get("system"),
+        )
+        guardrails.enforce(input_result)
+
         resp = self._anthropic.beta.messages.create(**kwargs)
         _log_cost(kwargs.get("model", ""), resp.usage)
+
+        output_result = guardrails.check_output(resp)
+        guardrails.enforce(output_result)
         return resp
 
     def count_tokens(self, **kwargs: Any) -> int:
@@ -442,9 +469,17 @@ class LLMGateway:
         return self._anthropic.messages.count_tokens(**kwargs).input_tokens
 
     def stream(self, **kwargs: Any):
-        """Streaming context manager."""
-        model = kwargs.get("model", "")
+        """Streaming context manager, with input guardrails.
 
+        Output guardrails run on the collected response after the stream
+        finishes (via the wrapper's get_final_message).
+        """
+        input_result = guardrails.check_input(
+            kwargs.get("messages", []), kwargs.get("system"),
+        )
+        guardrails.enforce(input_result)
+
+        model = kwargs.get("model", "")
         if not self._enabled or _is_anthropic_model(model):
             return self._anthropic.messages.stream(**kwargs)
 
@@ -459,6 +494,10 @@ class LLMGateway:
     def cost_summary(self) -> dict:
         """Aggregate cost data across all providers."""
         return get_cost_summary()
+
+    def guardrail_config(self) -> dict:
+        """Current guardrail configuration for observability."""
+        return guardrails.get_config()
 
     def _litellm_create(self, **kwargs: Any) -> _GatewayResponse:
         model = kwargs.pop("model", "")
