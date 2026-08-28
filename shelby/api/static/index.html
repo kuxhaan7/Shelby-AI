@@ -643,8 +643,6 @@ fileInput.onchange=async()=>{
 };
 
 async function inspectCsv(f){
-  // Wait rather than silently drop the file if something else is mid-flight
-  // (e.g. an image was attached in the same batch).
   for(let i=0;i<100 && loading;i++)await new Promise(r=>setTimeout(r,100));
   if(loading)return;
   loading=true; setBusy(true);
@@ -655,7 +653,19 @@ async function inspectCsv(f){
     const r=await fetch('/inspect/upload',{method:'POST',body:fd}); unthink();
     const d=await r.json();
     if(d.error){add('shelby',`<strong>${esc(d.error)}</strong>`);}
-    else fileReport(d);
+    else {
+      fileReport(d);
+      const ctx=[
+        `Context: the user just uploaded and inspected "${d.filename}".`,
+        `File saved at: ${d.saved_path}`,
+        `Rows: ${d.rows}, Columns: ${d.columns.length}, Duplicates: ${d.duplicate_rows}, Missing cells: ${d.missing_cells}`,
+        `Quality score: ${d.scores.overall.toFixed(1)}/100 (completeness: ${d.scores.completeness.toFixed(0)}, uniqueness: ${d.scores.uniqueness.toFixed(0)})`,
+        d.issues&&d.issues.length ? `Issues: ${d.issues.join('; ')}` : 'No obvious issues.',
+        'If the user asks to fix, repair, or work with "this dataset" or "the dataset", they mean this file.',
+      ].join('\n');
+      history.push({role:'user',content:ctx});
+      history.push({role:'assistant',content:`I've profiled **${d.filename}** — ${d.rows.toLocaleString()} rows, ${d.columns.length} columns, quality score ${d.scores.overall.toFixed(1)}/100. The file is saved and ready. Ask me to repair it, explain any issue, or run the full data-quality pipeline on it.`});
+    }
   }catch(e){unthink();add('shelby',`<strong>Upload failed</strong><br>${esc(String(e))}`);}
   finally{loading=false;setBusy(false);}
 }

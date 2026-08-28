@@ -478,13 +478,21 @@ async def tts(req: TTSRequest):
 
 @app.post("/inspect/upload")
 async def inspect_upload(file: UploadFile = File(...)):
-    """Profile any uploaded CSV: rows, columns, duplicates, nulls, quality score."""
+    """Profile any uploaded CSV and save it so the agent can reference it later."""
     raw = await file.read()
     if not raw:
         raise HTTPException(400, "Empty file")
 
     from ..dataquality.quickprofile import quick_profile_bytes
-    return await run_in_threadpool(quick_profile_bytes, raw, file.filename or "upload.csv")
+    from ..paths import uploads_dir
+
+    name = file.filename or "upload.csv"
+    save_path = uploads_dir() / name
+    save_path.write_bytes(raw)
+
+    profile = await run_in_threadpool(quick_profile_bytes, raw, name)
+    profile["saved_path"] = str(save_path)
+    return profile
 
 
 # ── File download ────────────────────────────────────────────────────────────

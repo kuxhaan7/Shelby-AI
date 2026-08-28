@@ -71,6 +71,13 @@ def schema_baselines_file() -> Path:
     return _p("SHELBY_SCHEMA_BASELINES_FILE", "schema_baselines.json")
 
 
+def uploads_dir() -> Path:
+    """Where user-uploaded files (CSVs, etc.) are saved for agent access."""
+    d = _p("SHELBY_UPLOADS_DIR", "uploads")
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def outbox_dir() -> Path:
     """Where generated files (e.g. cleaned CSVs) are written for delivery."""
     d = _p("SHELBY_OUTBOX_DIR", "outbox")
